@@ -68,25 +68,40 @@ with st.sidebar:
         default=["Rentabilidad", "Volatilidad", "Riesgo vs. Retorno", "Correlaciones"]
     )
 
-    with st.expander("⚖️ Asignación de Pesos (%)", expanded=True):
+    # EN app.py (reemplaza el expander de la sidebar por completo)
+
+    with st.sidebar.expander("⚖️ Asignación de Pesos (%)", expanded=True):
+        
+        # El código de inicialización no cambia
         if 'pesos' not in st.session_state or set(st.session_state.pesos.keys()) != set(seleccionados_isin):
-            if pesos_por_defecto and set(pesos_por_defecto.keys()) == set(seleccionados_isin):
-                 st.session_state.pesos = pesos_por_defecto
-            else:
-                st.session_state.pesos = {isin: int(100 / len(seleccionados_isin)) for isin in seleccionados_isin} if seleccionados_isin else {}
-            
+            st.session_state.pesos = {isin: int(100 / len(seleccionados_isin)) for isin in seleccionados_isin} if seleccionados_isin else {}
             if seleccionados_isin:
                 st.session_state.pesos[seleccionados_isin[0]] += 100 - sum(st.session_state.pesos.values())
 
         pesos_anteriores = st.session_state.pesos.copy()
+
+        # La creación de sliders no cambia
         for isin in seleccionados_isin:
             st.session_state.pesos[isin] = st.slider(mapa_isin_nombre.get(isin, isin), 0, 100, st.session_state.pesos.get(isin, 0), 1)
 
+        # --- LÓGICA DE AJUSTE AUTOMÁTICO (VERSIÓN DIRECCIONAL) ---
         if st.session_state.pesos != pesos_anteriores:
+            # Encontramos qué slider se movió y su posición en la lista
             isin_modificado = [isin for isin in seleccionados_isin if st.session_state.pesos.get(isin) != pesos_anteriores.get(isin)][0]
+            index_modificado = seleccionados_isin.index(isin_modificado)
             delta = st.session_state.pesos[isin_modificado] - pesos_anteriores[isin_modificado]
-            otros_isines = [isin for isin in seleccionados_isin if isin != isin_modificado]
-            isines_ajustables = [i for i in otros_isines if (delta > 0 and st.session_state.pesos[i] > 0) or (delta < 0 and st.session_state.pesos[i] < 100)]
+            
+            # --- NUEVA LÓGICA DIRECCIONAL ---
+            # Por defecto, intentamos ajustar los sliders que están DEBAJO del modificado.
+            isines_para_ajustar = seleccionados_isin[index_modificado + 1:]
+            
+            # REGLA ESPECIAL: Si no hay sliders debajo (porque movimos el último),
+            # entonces ajustamos los que están ARRIBA.
+            if not isines_para_ajustar:
+                isines_para_ajustar = seleccionados_isin[:index_modificado]
+            # ---------------------------------
+            
+            isines_ajustables = [i for i in isines_para_ajustar if (delta > 0 and st.session_state.pesos[i] > 0) or (delta < 0 and st.session_state.pesos[i] < 100)]
             
             if isines_ajustables:
                 suma_ajustable = sum(st.session_state.pesos[i] for i in isines_ajustables)
