@@ -1,5 +1,3 @@
-# app.py (VERSIÓN FINAL Y CORREGIDA)
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,10 +6,11 @@ import matplotlib.dates as mdates
 import seaborn as sns
 import json
 from pathlib import Path
+from streamlit_local_storage import LocalStorage
 from portfolio_analyzer import procesar_fondo, filtrar_por_horizonte, calcular_metricas_desde_rentabilidades
 
 # ==============================
-#   CONFIGURACIÓN INICIAL Y CARGA DE DATOS
+#   CONFIGURACIÓN INICIAL
 # ==============================
 st.set_page_config(page_title="📊 Analizador de Fondos", layout="wide")
 st.title("📊 Analizador de Fondos de Inversión")
@@ -26,11 +25,30 @@ def cargar_fondos(config_file="fondos.json"):
         data = json.load(f)
     return data.get("fondos", [])
 
+# 1. CARGAMOS LA CONFIGURACIÓN DE FONDOS
 fondos_config = cargar_fondos()
 if not fondos_config:
     st.stop()
 
+# 2. CREAMOS LAS LISTAS Y MAPAS DE NOMBRES DE FONDOS
 mapa_isin_nombre = {f["isin"]: f["nombre"] for f in fondos_config}
+fondos_nombres = [f"{f['nombre']} ({f['isin']})" for f in fondos_config]
+
+# 3. CON 'fondos_nombres' YA DEFINIDO, CARGAMOS LA CARTERA GUARDADA
+localS = LocalStorage()
+cartera_guardada = None
+json_cartera = localS.getItem('mi_cartera')
+
+if json_cartera and json_cartera != 'null':
+    try:
+        cartera_guardada = json.loads(json_cartera)
+    except json.JSONDecodeError:
+        st.error("No se pudo cargar la cartera guardada. El formato es incorrecto.")
+        cartera_guardada = None
+
+# Definimos los valores por defecto que usarán los widgets de la sidebar
+fondos_por_defecto_isines = cartera_guardada.get("fondos", []) if cartera_guardada else [f['isin'] for f in fondos_config]
+pesos_por_defecto = cartera_guardada.get("pesos", {}) if cartera_guardada else {}
 
 # ==============================
 #   BARRA LATERAL (SIDEBAR)
@@ -38,8 +56,8 @@ mapa_isin_nombre = {f["isin"]: f["nombre"] for f in fondos_config}
 with st.sidebar:
     st.header("Configuración del Análisis")
 
-    fondos_nombres = [f"{f['nombre']} ({f['isin']})" for f in fondos_config]
-    seleccionados_nombres = st.multiselect("Selecciona fondos", fondos_nombres, default=fondos_nombres)
+    default_selection = [f for f in fondos_nombres if any(isin in f for isin in fondos_por_defecto_isines)]
+    seleccionados_nombres = st.multiselect("Selecciona fondos", fondos_nombres, default=default_selection)
     seleccionados_isin = [f["isin"] for f in fondos_config if f"{f['nombre']} ({f['isin']})" in seleccionados_nombres]
 
     horizonte = st.selectbox("Horizonte temporal", ["3m", "6m", "YTD", "1y", "3y", "5y", "max"])
@@ -52,7 +70,11 @@ with st.sidebar:
 
     with st.expander("⚖️ Asignación de Pesos (%)", expanded=True):
         if 'pesos' not in st.session_state or set(st.session_state.pesos.keys()) != set(seleccionados_isin):
-            st.session_state.pesos = {isin: int(100 / len(seleccionados_isin)) for isin in seleccionados_isin} if seleccionados_isin else {}
+            if pesos_por_defecto and set(pesos_por_defecto.keys()) == set(seleccionados_isin):
+                 st.session_state.pesos = pesos_por_defecto
+            else:
+                st.session_state.pesos = {isin: int(100 / len(seleccionados_isin)) for isin in seleccionados_isin} if seleccionados_isin else {}
+            
             if seleccionados_isin:
                 st.session_state.pesos[seleccionados_isin[0]] += 100 - sum(st.session_state.pesos.values())
 
@@ -83,6 +105,22 @@ with st.sidebar:
         pesos = st.session_state.pesos
         total_peso = sum(pesos.values())
         st.metric("Suma Total", f"{total_peso}%")
+
+    st.markdown("---")
+    st.subheader("Gestionar Cartera")
+    if st.button("💾 Guardar Cartera Actual"):
+        if total_peso == 100:
+            cartera_a_guardar = {"fondos": seleccionados_isin, "pesos": pesos}
+            json_cartera_guardar = json.dumps(cartera_a_guardar)
+            localS.setItem('mi_cartera', json_cartera_guardar)
+            st.success("¡Cartera guardada!")
+        else:
+            st.error("La suma de los pesos debe ser 100%.")
+
+    if st.button("🗑️ Borrar Cartera Guardada"):
+        localS.setItem('mi_cartera', None)
+        st.success("Cartera eliminada.")
+
 
 # ==============================
 #   PROCESADO Y CÁLCULO DE DATOS
@@ -116,7 +154,7 @@ aligned_daily_returns = pd.concat(
 ).dropna()
 
 if aligned_daily_returns.empty:
-    st.warning("No hay datos superpuestos para los fondos y el horizonte seleccionados.")
+    st.warning("No hay datos superpuestos para los fondos y el horizonte seleccionados. No se pueden calcular métricas.")
     st.stop()
 
 metricas_fondos = []
@@ -155,10 +193,13 @@ nombres_nuevos = {
 columnas_a_mostrar = ["nombre", "annualized_return_%", "volatility_ann_%", "sharpe_ann", "max_drawdown_%"]
 columnas_existentes = [col for col in columnas_a_mostrar if col in df_metrics.columns]
 df_display = df_metrics[columnas_existentes].rename(columns=nombres_nuevos)
-st.dataframe(df_display.set_index("nombre"))
+
+num_rows = len(df_display)
+altura_dinamica = (num_rows + 1) * 35 + 3
+st.dataframe(df_display.set_index("nombre"), height=altura_dinamica)
+
 
 # --- Gráficos ---
-# ... (El código de los gráficos que sigue es el mismo que ya tenías y es correcto)
 if "Rentabilidad" in opciones:
     st.subheader("📈 Evolución normalizada")
     combined = pd.concat({isin: df["nav"] for isin, df in dfs_filtrados.items()}, axis=1).bfill().ffill()
@@ -178,7 +219,6 @@ if "Rentabilidad" in opciones:
 
 if "Volatilidad" in opciones:
     st.subheader(f"📊 Volatilidad rolling (30d) para el horizonte: {horizonte}")
-    # Usamos aligned_daily_returns como base para consistencia
     rolling_vol_funds = aligned_daily_returns.rolling(30).std() * (252**0.5)
     fig, ax = plt.subplots(figsize=(10, 5))
     for col in rolling_vol_funds.columns:
