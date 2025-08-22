@@ -87,22 +87,30 @@ cartera_guardada = leer_cartera_guardada()
 
 # Cartera: lista de isins + pesos
 if 'cartera_isines' not in st.session_state:
-    # filtra por si algún ISIN dejó de existir en config
     st.session_state.cartera_isines = [i for i in cartera_guardada.get('fondos', []) if i in todos_isines]
 
 if 'pesos' not in st.session_state:
     pesos_guardados = {k: int(v) for k, v in cartera_guardada.get('pesos', {}).items() if k in st.session_state.cartera_isines}
     if st.session_state.cartera_isines and not pesos_guardados:
-        # distribución equitativa si no hay pesos
         base = int(100/len(st.session_state.cartera_isines))
         pesos_guardados = {i: base for i in st.session_state.cartera_isines}
         pesos_guardados[st.session_state.cartera_isines[0]] += 100 - sum(pesos_guardados.values())
     st.session_state.pesos = pesos_guardados
 
-# Listado (fondos a analizar): independiente de la cartera
+# Listado guardado
+json_listado = localS.getItem('mi_listado')
+if json_listado and json_listado != 'null':
+    try:
+        listado_guardado = json.loads(json_listado)
+    except json.JSONDecodeError:
+        st.error("No se pudo cargar el listado guardado. Formato incorrecto.")
+        listado_guardado = []
+else:
+    listado_guardado = []
+
+# Listado (fondos a analizar)
 if 'listado_isines' not in st.session_state:
-    # por defecto, muestra todos los fondos definidos
-    st.session_state.listado_isines = todos_isines.copy()
+    st.session_state.listado_isines = listado_guardado or todos_isines.copy()
 
 # ------------------------------
 #   UTILIDAD: ajustar pesos (direccional)
@@ -110,31 +118,23 @@ if 'listado_isines' not in st.session_state:
 def ajustar_pesos_direccional(isines_ordenados, pesos_dict, isin_modificado, pesos_previos):
     index_modificado = isines_ordenados.index(isin_modificado)
     delta = pesos_dict[isin_modificado] - pesos_previos.get(isin_modificado, 0)
-
-    # Por defecto, ajusta los que están debajo
     isines_para_ajustar = isines_ordenados[index_modificado + 1:]
     if not isines_para_ajustar:
         isines_para_ajustar = isines_ordenados[:index_modificado]
-
     if not isines_para_ajustar:
-        return pesos_dict  # nada que ajustar
-
+        return pesos_dict
     isines_ajustables = [i for i in isines_para_ajustar if (delta > 0 and pesos_dict[i] > 0) or (delta < 0 and pesos_dict[i] < 100)]
     if not isines_ajustables:
         return pesos_dict
-
     suma_ajustable = sum(pesos_dict[i] for i in isines_ajustables)
     for isin in isines_ajustables:
         ratio = pesos_dict[isin] / suma_ajustable if suma_ajustable > 0 else 1/len(isines_ajustables)
         pesos_dict[isin] -= delta * ratio
-
     for isin in isines_ajustables:
         pesos_dict[isin] = max(0, min(100, int(round(pesos_dict[isin]))))
-
     suma_actual = sum(pesos_dict.values())
     if suma_actual != 100 and isines_ajustables:
         pesos_dict[isines_ajustables[0]] += 100 - suma_actual
-
     return pesos_dict
 
 # ==============================
@@ -142,69 +142,39 @@ def ajustar_pesos_direccional(isines_ordenados, pesos_dict, isin_modificado, pes
 # ==============================
 with st.sidebar:
     st.header("Configuración del Análisis")
-
-    # ---------- Listado (Análisis) ----------
     st.subheader("📋 Listado de fondos (para análisis)")
     fondos_nombres = list(mapa_nombre_isin.keys())
-
     default_selection = [n for n in fondos_nombres if mapa_nombre_isin[n] in st.session_state.listado_isines]
-    seleccionados_listado_nombres = st.multiselect(
-        "Selecciona fondos a mostrar",
-        fondos_nombres,
-        default=default_selection,
-        key="multiselect_listado"
-    )
+    seleccionados_listado_nombres = st.multiselect("Selecciona fondos a mostrar", fondos_nombres, default=default_selection, key="multiselect_listado")
     st.session_state.listado_isines = [mapa_nombre_isin[n] for n in seleccionados_listado_nombres]
-
-    horizonte = st.selectbox("Horizonte temporal", ["1y", "3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
-
-    opciones = st.multiselect(
-        "Selecciona visualizaciones:",
-        ["Rentabilidad", "Volatilidad", "Riesgo vs. Retorno", "Correlaciones"],
-        default=["Rentabilidad", "Volatilidad", "Riesgo vs. Retorno", "Correlaciones"],
-        key="opciones_graficos"
-    )
-
+    horizonte = st.selectbox("Horizonte temporal", ["3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
+    opciones = st.multiselect("Selecciona visualizaciones:", ["Rentabilidad", "Volatilidad", "Riesgo vs. Retorno", "Correlaciones"], default=["Rentabilidad", "Volatilidad", "Riesgo vs. Retorno", "Correlaciones"], key="opciones_graficos")
     st.markdown("---")
-
-    # ---------- Cartera (independiente) ----------
     st.subheader("💼 Mi Cartera")
-
-    # Añadir fondo a la cartera
     candidatos = [n for n in fondos_nombres if mapa_nombre_isin[n] not in st.session_state.cartera_isines]
     add_sel = st.selectbox("Añadir fondo a la cartera", ["—"] + candidatos, index=0)
     if add_sel != "—" and st.button("➕ Añadir a cartera"):
         nuevo_isin = mapa_nombre_isin[add_sel]
         st.session_state.cartera_isines.append(nuevo_isin)
-        # inicializa peso
         if nuevo_isin not in st.session_state.pesos:
             if st.session_state.pesos:
-                # redistribuye manteniendo suma 100
-                base_delta = int(100/len(st.session_state.cartera_isines))
                 for k in st.session_state.pesos:
                     st.session_state.pesos[k] = max(0, int(round(st.session_state.pesos[k] * (len(st.session_state.cartera_isines)-1)/len(st.session_state.cartera_isines))))
                 st.session_state.pesos[nuevo_isin] = 100 - sum(st.session_state.pesos.values())
             else:
                 st.session_state.pesos[nuevo_isin] = 100
         st.rerun()
-
-    # Mostrar fondos de la cartera con botón eliminar
     for isin in list(st.session_state.cartera_isines):
         cols = st.columns([5, 2, 1])
         cols[0].markdown(f"**{mapa_isin_nombre.get(isin, isin)}**\n\n<small>{isin}</small>", unsafe_allow_html=True)
-        # Peso (slider)
         peso_prev = st.session_state.pesos.get(isin, 0)
         st.session_state.pesos[isin] = cols[1].slider("Peso %", 0, 100, peso_prev, 1, key=f"peso_{isin}")
         if cols[2].button("🗑️", key=f"remove_{isin}"):
-            # quitar de cartera
             st.session_state.cartera_isines.remove(isin)
             st.session_state.pesos.pop(isin, None)
             st.rerun()
-
-    # Ajuste direccional si cambió algún slider
     if st.session_state.cartera_isines:
         pesos_previos = getattr(st.session_state, 'pesos_previos', st.session_state.pesos.copy())
-        # detecta modificado
         mod = None
         for i in st.session_state.cartera_isines:
             if st.session_state.pesos.get(i, 0) != pesos_previos.get(i, 0):
@@ -216,11 +186,8 @@ with st.sidebar:
             st.rerun()
         else:
             st.session_state.pesos_previos = st.session_state.pesos.copy()
-
     total_peso = sum(st.session_state.pesos.values()) if st.session_state.pesos else 0
     st.metric("Suma Total", f"{total_peso}%")
-
-    # Persistencia de cartera
     st.markdown("---")
     st.subheader("Gestionar Cartera")
     if st.button("💾 Guardar Cartera"):
@@ -230,12 +197,22 @@ with st.sidebar:
             st.success("¡Cartera guardada!")
         else:
             st.error("La suma de los pesos debe ser 100%.")
-
     if st.button("🗑️ Borrar Cartera Guardada"):
         localS.setItem('mi_cartera', None)
         st.session_state.cartera_isines = []
         st.session_state.pesos = {}
         st.success("Cartera eliminada.")
+        st.rerun()
+    st.markdown("---")
+    st.subheader("Gestionar Listado")
+    if st.button("💾 Guardar Listado"):
+        listado_a_guardar = st.session_state.listado_isines
+        localS.setItem('mi_listado', json.dumps(listado_a_guardar))
+        st.success("¡Listado guardado!")
+    if st.button("🗑️ Borrar Listado Guardado"):
+        localS.setItem('mi_listado', None)
+        st.session_state.listado_isines = todos_isines.copy()
+        st.success("Listado eliminado.")
         st.rerun()
 
 # ==============================
