@@ -10,7 +10,8 @@
       { "isin": "LU2416422751", "nombre": "Vontobel Credit Opps HI Hdg EUR Cap"},
       { "isin": "LU1896847628", "nombre": "Vontobel EM Blend HI H EUR Acc"},
       { "isin": "IE00B5648R31", "nombre": "Man GLG Japan CoreAlpha Equity Class D H EUR"},
-      { "isin": "ES0110407063", "nombre": "Gestión Boutique VI Opportunity A FI"}
+      { "isin": "ES0110407063", "nombre": "Gestión Boutique VI Opportunity A FI"},
+      { "isin": "IE00BYX5MX67", "nombre": "Fidelity S&P 500 Index EUR P Acc"}
     ]
   }
   
