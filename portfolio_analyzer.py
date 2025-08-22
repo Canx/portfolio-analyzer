@@ -104,9 +104,12 @@ def filtrar_por_horizonte(df, horizonte: str):
     raise ValueError(f"Horizonte no reconocido: {horizonte}")
 
 
-def procesar_fondo(isin: str):
+# ==============================
+#   PROCESAR FONDO (parche con force_to_today)
+# ==============================
+def procesar_fondo(isin: str, force_to_today: bool = False):
     file_path = os.path.join(OUTPUT_DIR, f"{isin}.csv")
-    today = datetime.today().date()
+    today = date.today()
     recent_limit = today - timedelta(days=N_DAYS)
 
     if os.path.exists(file_path):
@@ -114,8 +117,7 @@ def procesar_fondo(isin: str):
         df = df.sort_values("date").drop_duplicates(subset="date")
         last_date = df["date"].max().date()
 
-        if last_date < recent_limit:
-            # Descarga exacta de huecos: desde el día siguiente al último dato hasta hoy
+        if (force_to_today and last_date < today) or (last_date < recent_limit):
             start_date = last_date + timedelta(days=1)
             if start_date <= today:
                 print(f"🔄 Actualizando {isin} desde {start_date} a {today}...")
@@ -124,7 +126,6 @@ def procesar_fondo(isin: str):
                     nuevos = pd.DataFrame(fund.nav(start_date=start_date, end_date=today))
                 except Exception as e:
                     print(f"⚠️ Error descargando {isin}: {e}")
-                    # devuelve lo que tenemos
                     return df, calcular_metricas(df)
 
                 if not nuevos.empty:
@@ -145,7 +146,6 @@ def procesar_fondo(isin: str):
         else:
             print(f"📂 Datos de {isin} cubren los últimos {N_DAYS} días")
     else:
-        # CSV no existe → intentamos todo el histórico disponible
         print(f"🌐 Descargando todo el histórico disponible para {isin}...")
         try:
             fund = ms.Funds(isin)
@@ -173,6 +173,9 @@ def procesar_fondo(isin: str):
 
     metrics = calcular_metricas(df)
     return df, metrics
+
+# ==== RESTO DEL ARCHIVO (sin cambios) ====
+# ... (filtrar_por_horizonte, calcular_metricas, etc.)
 
 
 # ==== FUNCIONES ====
