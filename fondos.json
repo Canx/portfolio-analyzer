@@ -9,7 +9,8 @@
       { "isin": "IE00BFZMJT78", "nombre": "Neuberger Berman Short Dur Er Bd EURIAcc"},
       { "isin": "LU2416422751", "nombre": "Vontobel Credit Opps HI Hdg EUR Cap"},
       { "isin": "LU1896847628", "nombre": "Vontobel EM Blend HI H EUR Acc"},
-      { "isin": "IE00B5648R31", "nombre": "Man GLG Japan CoreAlpha Equity Class D H EUR"}
+      { "isin": "IE00B5648R31", "nombre": "Man GLG Japan CoreAlpha Equity Class D H EUR"},
+      { "isin": "ES0110407063", "nombre": "Gestión Boutique VI Opportunity A FI"}
     ]
   }
   
