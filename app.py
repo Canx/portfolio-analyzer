@@ -9,6 +9,8 @@ from pathlib import Path
 import datetime
 from streamlit_local_storage import LocalStorage
 from portfolio_analyzer import procesar_fondo, filtrar_por_horizonte, calcular_metricas_desde_rentabilidades
+from scipy.optimize import minimize
+
 
 # ==============================
 #   CONFIGURACIÓN INICIAL
@@ -19,6 +21,90 @@ st.title("📊 Analizador de Fondos de Inversión")
 # ------------------------------
 #   HELPERS (carga y estado)
 # ------------------------------
+
+def optimizar_sharpe(returns_df):
+    mean_returns = returns_df.mean()
+    cov_matrix = returns_df.cov()
+    
+    n = len(mean_returns)
+    init_weights = np.ones(n) / n
+    
+    def sharpe_ratio(weights):
+        ret = np.dot(weights, mean_returns)
+        vol = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+        return ret / vol if vol > 0 else 0
+    
+    def neg_sharpe(weights):
+        return -sharpe_ratio(weights)
+    
+    constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1})
+    bounds = tuple((0, 1) for _ in range(n))
+    
+    result = minimize(neg_sharpe, init_weights,
+                      method='SLSQP',
+                      bounds=bounds,
+                      constraints=constraints)
+    
+    return result.x if result.success else init_weights
+
+
+def optimizar_sharpe(returns_df, risk_free_rate=0.0):
+    """
+    Encuentra la cartera con el máximo Ratio de Sharpe.
+
+    Args:
+        returns_df (pd.DataFrame): DataFrame con las rentabilidades diarias de los activos.
+        risk_free_rate (float): La tasa anual libre de riesgo.
+
+    Returns:
+        np.array: Un array con los pesos óptimos para cada activo.
+    """
+    # Factor para anualizar métricas diarias
+    annualization_factor = 252
+
+    # Rentabilidades medias y covarianza, ANUALIZADAS
+    mean_returns = returns_df.mean() * annualization_factor
+    cov_matrix = returns_df.cov() * annualization_factor
+
+    num_assets = len(mean_returns)
+    initial_weights = np.ones(num_assets) / num_assets
+
+    def portfolio_performance(weights):
+        """Calcula la rentabilidad y volatilidad anualizada de la cartera."""
+        portfolio_return = np.dot(weights, mean_returns)
+        portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+        return portfolio_return, portfolio_volatility
+
+    def negative_sharpe_ratio(weights):
+        """El Ratio de Sharpe negativo (la función a minimizar)."""
+        p_return, p_volatility = portfolio_performance(weights)
+        
+        # Si la volatilidad es cero, el Sharpe es cero para evitar división por cero.
+        if p_volatility == 0:
+            return 0
+            
+        sharpe = (p_return - risk_free_rate) / p_volatility
+        # Se devuelve el negativo porque scipy.optimize.minimize busca un mínimo.
+        # Minimizar -Sharpe es igual a maximizar Sharpe.
+        return -sharpe
+
+    # Restricciones: la suma de los pesos debe ser 1.
+    constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1})
+    
+    # Límites: cada peso debe estar entre 0 y 1 (sin posiciones cortas).
+    bounds = tuple((0.0, 1.0) for _ in range(num_assets))
+
+    # Optimización
+    result = minimize(fun=negative_sharpe_ratio,
+                      x0=initial_weights,
+                      method='SLSQP',
+                      bounds=bounds,
+                      constraints=constraints)
+
+    # Devolver los pesos optimizados si la optimización fue exitosa, si no, los iniciales.
+    return result.x if result.success else initial_weights
+
+
 @st.cache_data
 def cargar_fondos(config_file="fondos.json"):
     path = Path(config_file)
@@ -41,7 +127,7 @@ def cargar_y_filtrar_datos(isines, horizonte_seleccionado):
                 dfs_filtrados[isin] = df_filtrado
     return dfs_filtrados
 
-# LocalStorage (lado cliente) para persistir la cartera
+# LocalStorage (lado cliente) para persistir la cartera y listado
 localS = LocalStorage()
 
 def leer_cartera_guardada():
@@ -147,6 +233,10 @@ with st.sidebar:
     default_selection = [n for n in fondos_nombres if mapa_nombre_isin[n] in st.session_state.listado_isines]
     seleccionados_listado_nombres = st.multiselect("Selecciona fondos a mostrar", fondos_nombres, default=default_selection, key="multiselect_listado")
     st.session_state.listado_isines = [mapa_nombre_isin[n] for n in seleccionados_listado_nombres]
+
+    # 🚀 Autoguardado del listado
+    localS.setItem('mi_listado', json.dumps(st.session_state.listado_isines), key="save_listado")
+
     horizonte = st.selectbox("Horizonte temporal", ["3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
     opciones = st.multiselect("Selecciona visualizaciones:", ["Rentabilidad", "Volatilidad", "Riesgo vs. Retorno", "Correlaciones"], default=["Rentabilidad", "Volatilidad", "Riesgo vs. Retorno", "Correlaciones"], key="opciones_graficos")
     st.markdown("---")
@@ -188,32 +278,86 @@ with st.sidebar:
             st.session_state.pesos_previos = st.session_state.pesos.copy()
     total_peso = sum(st.session_state.pesos.values()) if st.session_state.pesos else 0
     st.metric("Suma Total", f"{total_peso}%")
+
+    # 🚀 Autoguardado de la cartera
+    cartera_a_guardar = {"fondos": st.session_state.cartera_isines, "pesos": st.session_state.pesos}
+    localS.setItem('mi_cartera', json.dumps(cartera_a_guardar), key="save_cartera")
+
+    # En app.py, dentro de `with st.sidebar:`, reemplaza el bloque del botón de optimizar
+    if st.button("⚖️ Optimizar Cartera (Sharpe)"):
+        if st.session_state.cartera_isines:
+            # 1. Cargar los datos de los fondos de la cartera CON el horizonte seleccionado
+            horizonte_actual = st.session_state.horizonte
+            dfs_opt = cargar_y_filtrar_datos(tuple(st.session_state.cartera_isines), horizonte_actual)
+
+            if dfs_opt:
+                # 2. Calcular las rentabilidades diarias y alinearlas
+                #    (ELIMINAMOS .set_index("date") PORQUE EL DF YA ESTÁ INDEXADO POR FECHA)
+                returns_df = pd.concat(
+                    {isin: df["nav"].pct_change() for isin, df in dfs_opt.items()}, axis=1
+                ).dropna()
+
+                # 3. Optimizar solo si hay datos suficientes
+                if not returns_df.empty and len(returns_df) > 1:
+                    
+                    new_weights = optimizar_sharpe(returns_df)
+
+                    pesos_optimizados = {isin: int(round(w * 100)) for isin, w in zip(returns_df.columns, new_weights)}
+                    
+                    current_sum = sum(pesos_optimizados.values())
+                    if current_sum != 100 and pesos_optimizados:
+                        key_to_adjust = max(pesos_optimizados, key=pesos_optimizados.get)
+                        pesos_optimizados[key_to_adjust] += 100 - current_sum
+                    
+                    st.session_state.pesos = pesos_optimizados
+                    
+                    st.success(f"Cartera optimizada para el horizonte '{horizonte_actual}' ✅")
+                    st.rerun()
+                else:
+                    st.warning(f"No hay suficientes datos comunes en el horizonte '{horizonte_actual}' para optimizar.")
+            else:
+                st.warning(f"No se encontraron datos para los fondos de la cartera en el horizonte '{horizonte_actual}'.")
+        else:
+            st.warning("No tienes fondos en la cartera para optimizar.")
+            
     st.markdown("---")
     st.subheader("Gestionar Cartera")
-    if st.button("💾 Guardar Cartera"):
-        if total_peso == 100 or total_peso == 0:
-            cartera_a_guardar = {"fondos": st.session_state.cartera_isines, "pesos": st.session_state.pesos}
-            localS.setItem('mi_cartera', json.dumps(cartera_a_guardar))
-            st.success("¡Cartera guardada!")
-        else:
-            st.error("La suma de los pesos debe ser 100%.")
     if st.button("🗑️ Borrar Cartera Guardada"):
         localS.setItem('mi_cartera', None)
         st.session_state.cartera_isines = []
         st.session_state.pesos = {}
         st.success("Cartera eliminada.")
         st.rerun()
+
     st.markdown("---")
-    st.subheader("Gestionar Listado")
-    if st.button("💾 Guardar Listado"):
-        listado_a_guardar = st.session_state.listado_isines
-        localS.setItem('mi_listado', json.dumps(listado_a_guardar))
-        st.success("¡Listado guardado!")
-    if st.button("🗑️ Borrar Listado Guardado"):
-        localS.setItem('mi_listado', None)
-        st.session_state.listado_isines = todos_isines.copy()
-        st.success("Listado eliminado.")
-        st.rerun()
+    st.subheader("➕ Añadir Nuevo Fondo")
+
+    with st.form("form_add_fondo"):
+        nuevo_isin = st.text_input("ISIN")
+        nuevo_nombre = st.text_input("Nombre del fondo")
+        submitted = st.form_submit_button("Añadir Fondo")
+
+        if submitted:
+            if not nuevo_isin or not nuevo_nombre:
+                st.error("Por favor, completa ISIN y Nombre.")
+            else:
+                config_file = Path("fondos.json")
+                if config_file.exists():
+                    with open(config_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                else:
+                    data = {"fondos": []}
+
+                # Comprobar si ya existe
+                if any(f["isin"] == nuevo_isin for f in data["fondos"]):
+                    st.warning("Ese ISIN ya existe en la configuración.")
+                else:
+                    data["fondos"].append({"isin": nuevo_isin, "nombre": nuevo_nombre})
+                    with open(config_file, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+                    st.success(f"Fondo {nuevo_nombre} ({nuevo_isin}) añadido.")
+                    st.rerun()
+
 
 # ==============================
 #   PROCESADO Y MÉTRICAS
