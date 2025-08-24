@@ -539,28 +539,42 @@ if aligned_daily_returns_listado is not None and not aligned_daily_returns_lista
 
     if "Riesgo vs. Retorno" in st.session_state.opciones_graficos and not df_metrics.empty:
         st.subheader("📊 Rentabilidad vs. Volatilidad")
+
+        # Filtrar solo fondos en cartera
+        df_cartera_fondos = df_metrics[
+            (df_metrics["isin"].isin(st.session_state.cartera_isines)) & 
+            (df_metrics["nombre"] != "💼 Mi Cartera")
+        ]
+
         fig, ax = plt.subplots(figsize=(10, 6))
-        df_fondos_solo = df_metrics[df_metrics["nombre"] != "💼 Mi Cartera"]
-        if not df_fondos_solo.empty:
-            x_fondos, y_fondos = df_fondos_solo["volatility_ann_%"], df_fondos_solo["annualized_return_%"]
-            ax.scatter(x_fondos, y_fondos, s=100, alpha=0.6, edgecolors="k", label="Fondos Individuales")
-            for i, txt in enumerate(df_fondos_solo["nombre"]):
+
+        # Fondos individuales de la cartera
+        if not df_cartera_fondos.empty:
+            x_fondos, y_fondos = df_cartera_fondos["volatility_ann_%"], df_cartera_fondos["annualized_return_%"]
+            ax.scatter(x_fondos, y_fondos, s=100, alpha=0.6, edgecolors="k", label="Fondos en Cartera")
+            for i, txt in enumerate(df_cartera_fondos["nombre"]):
                 ax.annotate(txt, (x_fondos.iloc[i], y_fondos.iloc[i]), xytext=(5,5), textcoords='offset points')
             ax.axvline(x_fondos.mean(), color='gray', linestyle='--', linewidth=0.8)
             ax.axhline(y_fondos.mean(), color='gray', linestyle='--', linewidth=0.8)
 
+        # Punto agregado de la cartera
         if not df_metrics[df_metrics["nombre"] == "💼 Mi Cartera"].empty:
             cartera_metrics = df_metrics[df_metrics["nombre"] == "💼 Mi Cartera"].iloc[0]
             x_cartera, y_cartera = cartera_metrics["volatility_ann_%"], cartera_metrics["annualized_return_%"]
             ax.scatter(x_cartera, y_cartera, s=300, c="red", marker="*", edgecolors="black", label="💼 Mi Cartera", zorder=5)
             ax.annotate("Mi Cartera", (x_cartera, y_cartera), xytext=(5,5), textcoords='offset points', weight='bold')
+
         ax.set_xlabel(f"Volatilidad Anualizada (%) - Periodo: {st.session_state.horizonte}")
         ax.set_ylabel(f"Rentabilidad Anualizada (%) - Periodo: {st.session_state.horizonte}")
-        ax.set_title("Riesgo vs. Retorno de los Fondos y la Cartera")
+        ax.set_title("Riesgo vs. Retorno de la Cartera")
         ax.grid(True, linestyle=':', alpha=0.6)
         ax.legend()
         st.pyplot(fig)
-        st.info("""**Cómo interpretar el gráfico:**\n* **Busca la estrella (⭐):** Esa es tu cartera. Idealmente, más a la izquierda (menos riesgo) y más arriba (más retorno) que la media de los fondos.""")
+
+        st.info("""**Cómo interpretar el gráfico:**  
+        * ⚪ Puntos = fondos que forman tu cartera.  
+        * ⭐ Estrella = tu cartera consolidada.  
+        Idealmente, la estrella debería quedar hacia arriba (más retorno) y a la izquierda (menos riesgo) que la media de los puntos.""")
 
     if "Correlaciones" in st.session_state.opciones_graficos and aligned_daily_returns_listado.shape[1] > 1:
         st.subheader("🔗 Correlación entre fondos (Listado)")
