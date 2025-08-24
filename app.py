@@ -10,6 +10,7 @@ import datetime
 from streamlit_local_storage import LocalStorage
 from portfolio_analyzer import procesar_fondo, filtrar_por_horizonte, calcular_metricas_desde_rentabilidades
 from scipy.optimize import minimize
+from scipy.cluster.hierarchy import linkage
 
 
 # ==============================
@@ -21,7 +22,67 @@ st.title("📊 Analizador de Fondos de Inversión")
 # ------------------------------
 #   HELPERS (carga y estado)
 # ------------------------------
-# En app.py, añade esta nueva función
+def hrp_allocation(cov, corr):
+    """
+    Implementación de Hierarchical Risk Parity (HRP) usando scipy,
+    con mapeo correcto de índices a labels (ISINs).
+    """
+    labels = list(cov.index)
+
+    # --- Paso 1: clustering jerárquico ---
+    dist = ((1 - corr) / 2.0) ** 0.5
+    link = linkage(dist, method="ward")
+
+    # --- Paso 2: ordenar el dendrograma ---
+    def get_quasi_diag(link):
+        link = link.astype(int)
+        sort_ix = pd.Series([link[-1, 0], link[-1, 1]])
+        num_items = link[-1, 3]  # número de elementos originales
+        while sort_ix.max() >= num_items:
+            sort_ix.index = range(0, sort_ix.shape[0]*2, 2)
+            df0 = sort_ix[sort_ix >= num_items]
+            i = df0.index
+            j = df0.values - num_items
+            sort_ix[i] = link[j, 0]
+            df1 = pd.Series(link[j, 1], index=i+1)
+            sort_ix = pd.concat([sort_ix, df1])
+            sort_ix = sort_ix.sort_index()
+        return sort_ix.tolist()
+
+    sort_ix = get_quasi_diag(link)
+
+    # 🔑 Convertir índices numéricos a labels (ISINs reales)
+    sort_ix = [labels[i] for i in sort_ix]
+
+    # --- Paso 3: asignación recursiva de riesgos ---
+    def get_cluster_var(cov, cluster_items):
+        cov_ = cov.loc[cluster_items, cluster_items]
+        w = np.ones(len(cov_)) / len(cov_)
+        return np.dot(w, np.dot(cov_, w))
+
+    def recursive_bisection(cov, sort_ix):
+        w = pd.Series(1, index=sort_ix)
+        clusters = [sort_ix]
+        while len(clusters) > 0:
+            clusters_ = []
+            for cluster_items in clusters:
+                if len(cluster_items) <= 1:
+                    continue
+                split = int(len(cluster_items) / 2)
+                c1 = cluster_items[:split]
+                c2 = cluster_items[split:]
+                var1 = get_cluster_var(cov, c1)
+                var2 = get_cluster_var(cov, c2)
+                alpha = 1 - var1 / (var1 + var2)
+                w[c1] *= alpha
+                w[c2] *= 1 - alpha
+                clusters_ += [c1, c2]
+            clusters = clusters_
+        return w
+
+    hrp_weights = recursive_bisection(cov, sort_ix)
+    return hrp_weights / hrp_weights.sum()
+
 
 def optimizar_min_volatilidad(returns_df, target_return):
     """
@@ -323,75 +384,40 @@ with st.sidebar:
     cartera_a_guardar = {"fondos": st.session_state.cartera_isines, "pesos": st.session_state.pesos}
     localS.setItem('mi_cartera', json.dumps(cartera_a_guardar), key="save_cartera")
 
-# En app.py, dentro de `with st.sidebar:`, reemplaza el antiguo bloque de optimización por este
-
+    # En app.py, dentro de `with st.sidebar:`, reemplaza el antiguo bloque de optimización por este
     st.markdown("---")
-    st.subheader("⚖️ Optimización de Cartera")
+    st.subheader("⚖️ Optimización de Cartera (HRP)")
 
-    # Selector para el objetivo de la optimización
-    opt_mode = st.radio(
-        "Objetivo de la optimización:",
-        ("Maximizar Ratio de Sharpe", "Minimizar Volatilidad (con Retorno Mín.)"),
-        key="opt_mode",
-        help="**Maximizar Sharpe**: Busca la mejor rentabilidad por unidad de riesgo. **Minimizar Volatilidad**: Busca el menor riesgo posible para una rentabilidad mínima que tú elijas."
-    )
+    if st.button("🚀 Optimizar con HRP"):
+        if st.session_state.cartera_isines:
+            horizonte_actual = st.session_state.horizonte
+            dfs_opt = cargar_y_filtrar_datos(tuple(st.session_state.cartera_isines), horizonte_actual)
 
-    target_return_pct = None
-    # Si se elige minimizar volatilidad, mostrar el campo para el retorno mínimo
-    if opt_mode == "Minimizar Volatilidad (con Retorno Mín.)":
-        target_return_pct = st.number_input(
-            "Rentabilidad Anual Mínima Deseada (%)",
-            min_value=-20.0,
-            max_value=100.0,
-            value=5.0,  # Un valor por defecto razonable
-            step=0.5,
-            format="%.1f"
-        )
+            if dfs_opt:
+                returns_df = pd.concat(
+                    {isin: df["nav"].pct_change() for isin, df in dfs_opt.items()}, axis=1
+                ).dropna()
 
-        # Cambiamos el texto del botón para que sea más genérico
-        if st.button("🚀 Optimizar Cartera"):
-            if st.session_state.cartera_isines:
-                horizonte_actual = st.session_state.horizonte
-                dfs_opt = cargar_y_filtrar_datos(tuple(st.session_state.cartera_isines), horizonte_actual)
+                if not returns_df.empty and len(returns_df) > 1:
+                    cov = returns_df.cov()
+                    corr = returns_df.corr()
+                    hrp_weights = hrp_allocation(cov, corr)
 
-                if dfs_opt:
-                    returns_df = pd.concat(
-                        {isin: df["nav"].pct_change() for isin, df in dfs_opt.items()}, axis=1
-                    ).dropna()
+                    pesos_optimizados = {isin: int(round(hrp_weights[isin] * 100)) for isin in returns_df.columns}
+                    current_sum = sum(pesos_optimizados.values())
+                    if current_sum != 100 and pesos_optimizados:
+                        key_to_adjust = max(pesos_optimizados, key=pesos_optimizados.get)
+                        pesos_optimizados[key_to_adjust] += 100 - current_sum
 
-                    if not returns_df.empty and len(returns_df) > 1:
-                        returns_df = returns_df.sort_index(axis=1)
-                        
-                        new_weights = None
-                        # Lógica condicional para llamar a la función correcta
-                        if opt_mode == "Maximizar Ratio de Sharpe":
-                            new_weights = optimizar_sharpe(returns_df)
-                        else:
-                            # Convertir el porcentaje a decimal para la función
-                            target_return_dec = target_return_pct / 100.0
-                            new_weights = optimizar_min_volatilidad(returns_df, target_return_dec)
-
-                        # Comprobar si la optimización tuvo éxito
-                        if new_weights is not None:
-                            pesos_optimizados = {isin: int(round(w * 100)) for isin, w in zip(returns_df.columns, new_weights)}
-                            
-                            current_sum = sum(pesos_optimizados.values())
-                            if current_sum != 100 and pesos_optimizados:
-                                key_to_adjust = max(pesos_optimizados, key=pesos_optimizados.get)
-                                pesos_optimizados[key_to_adjust] += 100 - current_sum
-                            
-                            st.session_state.pesos = pesos_optimizados
-                            st.success(f"Cartera optimizada con éxito para el objetivo: '{opt_mode}' ✅")
-                            st.rerun()
-                        else:
-                            # Mensaje de error si no se pudo encontrar una solución
-                            st.error(f"No se pudo encontrar una cartera que cumpla con una rentabilidad del {target_return_pct}%. Intenta un objetivo de rentabilidad más bajo.")
-                    else:
-                        st.warning(f"No hay suficientes datos comunes en el horizonte '{horizonte_actual}' para optimizar.")
+                    st.session_state.pesos = pesos_optimizados
+                    st.success("Cartera optimizada con HRP ✅")
+                    st.rerun()
                 else:
-                    st.warning(f"No se encontraron datos para los fondos de la cartera en el horizonte '{horizonte_actual}'.")
+                    st.warning("No hay suficientes datos comunes para optimizar con HRP.")
             else:
-                st.warning("No tienes fondos en la cartera para optimizar.")
+                st.warning("No se encontraron datos para los fondos de la cartera.")
+        else:
+            st.warning("No tienes fondos en la cartera para optimizar.")
 
 
 # ==============================
