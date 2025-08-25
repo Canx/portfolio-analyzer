@@ -15,8 +15,8 @@ class DataManager:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(exist_ok=True)
         self.today = date.today()
-        # Define qué consideramos "reciente". 3 días cubre fines de semana.
-        self.recency_threshold_days = 3
+        # Define qué consideramos "reciente". 5 días cubre fines de semana.
+        self.recency_threshold_days = 5
 
     def _download_nav(self, isin: str, start_date: date, end_date: date) -> pd.DataFrame | None:
         """Descarga datos de Morningstar para un ISIN y un rango de fechas."""
