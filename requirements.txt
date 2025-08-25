@@ -6,3 +6,4 @@ seaborn
 mstarpy
 streamlit-local-storage
 scipy
+plotly

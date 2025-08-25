@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import seaborn as sns
 from streamlit_local_storage import LocalStorage
+import plotly.express as px
+import plotly.graph_objects as go
+
 
 # --- HELPERS DE UI ---
 def ajustar_pesos_direccional(isines_ordenados, pesos_dict, isin_modificado, pesos_previos):
@@ -134,11 +137,19 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
 
     return horizonte, run_hrp_optimization
 
+# En src/ui_components.py
+
+
+# ... (La función render_sidebar y ajustar_pesos_direccional no cambian) ...
+
+# En src/ui_components.py
+# ... (las importaciones y otras funciones no cambian) ...
+
 def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
-    """Renderiza el contenido principal. Muestra todos los gráficos siempre."""
+    """Renderiza el contenido principal. Usa Plotly para gráficos interactivos."""
     st.header("Análisis de la Cartera")
 
-    # --- TABLA DE MÉTRICAS ---
+    # --- TABLA DE MÉTRICAS (no cambia) ---
     st.subheader(f"📑 Métricas para el horizonte: {st.session_state.horizonte}")
     if not df_metrics.empty:
         df_display = df_metrics.rename(columns={
@@ -148,55 +159,66 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
         }).set_index("Nombre")[["Rent. Anual (%)", "Volatilidad Anual (%)", "Ratio Sharpe", "Caída Máxima (%)"]]
         st.dataframe(df_display.style.format("{:.2f}"))
     
-    # --- GRÁFICOS ---
+    # --- GRÁFICOS INTERACTIVOS CON PLOTLY ---
     if daily_returns.empty: return
 
+    # --- 1. Gráfico de Rentabilidad Normalizada (no cambia) ---
+    st.subheader("📈 Evolución normalizada")
     navs_normalizados = (1 + daily_returns).cumprod()
     navs_normalizados = (navs_normalizados / navs_normalizados.iloc[0]) * 100
-
-    # Gráfico de Rentabilidad
-    st.subheader("📈 Evolución normalizada")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    for col in navs_normalizados.columns:
-        ax.plot(navs_normalizados.index, navs_normalizados[col], label=mapa_isin_nombre.get(col, col), alpha=0.6)
+    df_plot = navs_normalizados.rename(columns=mapa_isin_nombre).reset_index()
+    df_plot = df_plot.melt(id_vars="date", var_name="Fondo", value_name="Valor Normalizado")
+    fig_rent = px.line(df_plot, x="date", y="Valor Normalizado", color="Fondo", title="Evolución Normalizada de la Cartera")
     if portfolio and portfolio.nav is not None:
-         ax.plot(portfolio.nav.index, portfolio.nav, label="💼 Mi Cartera", color="black", linewidth=2.5, linestyle="--")
-    ax.legend(); ax.grid(True, linestyle='--', alpha=0.6)
-    st.pyplot(fig)
+        fig_rent.add_trace(go.Scatter(x=portfolio.nav.index, y=portfolio.nav.values, mode='lines', name='💼 Mi Cartera', line=dict(color='black', width=3, dash='dash')))
+    st.plotly_chart(fig_rent, use_container_width=True)
 
-    # Gráfico de Volatilidad
+    # --- 2. Gráfico de Volatilidad Rolling (no cambia) ---
     st.subheader("📊 Volatilidad rolling (30d)")
     rolling_vol = daily_returns.rolling(30).std() * (252**0.5) * 100
-    fig, ax = plt.subplots(figsize=(10, 5))
-    for col in rolling_vol.columns:
-        ax.plot(rolling_vol.index, rolling_vol[col], label=mapa_isin_nombre.get(col, col), alpha=0.6)
+    df_vol_plot = rolling_vol.rename(columns=mapa_isin_nombre).reset_index()
+    df_vol_plot = df_vol_plot.melt(id_vars="date", var_name="Fondo", value_name="Volatilidad Anualizada (%)")
+    fig_vol = px.line(df_vol_plot, x="date", y="Volatilidad Anualizada (%)", color="Fondo", title="Volatilidad Anualizada (Rolling 30 días)")
     if portfolio and portfolio.daily_returns is not None:
         portfolio_vol = portfolio.daily_returns.rolling(30).std() * (252**0.5) * 100
-        ax.plot(portfolio_vol.index, portfolio_vol, label="💼 Mi Cartera", color="black", linewidth=2.5, linestyle="--")
-    ax.legend(); ax.grid(True, linestyle='--', alpha=0.6)
-    st.pyplot(fig)
-
-    # Gráfico de Riesgo vs. Retorno
+        fig_vol.add_trace(go.Scatter(x=portfolio_vol.index, y=portfolio_vol.values, mode='lines', name='💼 Mi Cartera', line=dict(color='black', width=3, dash='dash')))
+    st.plotly_chart(fig_vol, use_container_width=True)
+    
+    # --- 3. Gráfico de Riesgo vs. Retorno (SECCIÓN CORREGIDA) ---
     if not df_metrics.empty:
         st.subheader("🎯 Riesgo vs. Retorno")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        cartera_metrics = df_metrics[df_metrics["nombre"] == "💼 Mi Cartera"]
         fondos_metrics = df_metrics[df_metrics["nombre"] != "💼 Mi Cartera"]
-        sns.scatterplot(data=fondos_metrics, x="volatility_ann_%", y="annualized_return_%", s=100, alpha=0.7, ax=ax, label="Fondos Individuales")
-        for i, row in fondos_metrics.iterrows():
-            ax.text(row["volatility_ann_%"]+0.1, row["annualized_return_%"], row["nombre"], fontsize=9)
-        if not cartera_metrics.empty:
-            ax.scatter(cartera_metrics["volatility_ann_%"], cartera_metrics["annualized_return_%"], marker='*', s=300, c='red', zorder=5, label="Mi Cartera")
-        ax.set_xlabel("Volatilidad Anualizada (%)"); ax.set_ylabel("Rentabilidad Anualizada (%)"); ax.grid(True, linestyle=':', alpha=0.6); ax.legend()
-        st.pyplot(fig)
         
-    # Gráfico de Correlaciones
+        fig_risk = px.scatter(fondos_metrics,
+                              x="volatility_ann_%",
+                              y="annualized_return_%",
+                              text="nombre",
+                              hover_name="nombre",
+                              title="Riesgo vs. Retorno de los Fondos")
+        
+        # --- AQUÍ ESTÁ EL ARREGLO: 'top center' con espacio ---
+        fig_risk.update_traces(textposition='top center')
+        
+        cartera_metrics = df_metrics[df_metrics["nombre"] == "💼 Mi Cartera"]
+        if not cartera_metrics.empty:
+            fig_risk.add_trace(go.Scatter(x=cartera_metrics["volatility_ann_%"],
+                                          y=cartera_metrics["annualized_return_%"],
+                                          mode='markers',
+                                          marker=dict(color='red', size=15, symbol='star'),
+                                          name='💼 Mi Cartera'))
+
+        fig_risk.update_layout(xaxis_title="Volatilidad Anualizada (%)", yaxis_title="Rentabilidad Anualizada (%)")
+        st.plotly_chart(fig_risk, use_container_width=True)
+
+    # --- 4. Gráfico de Correlaciones (no cambia) ---
     if len(st.session_state.cartera_isines) > 1:
         st.subheader("🔗 Correlación de la Cartera")
         corr_matrix = daily_returns.corr()
-        fig, ax = plt.subplots(figsize=(8, 6))
-        sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f", ax=ax, annot_kws={"size": 8})
-        st.pyplot(fig)
+        corr_matrix.columns = [mapa_isin_nombre.get(c, c) for c in corr_matrix.columns]
+        corr_matrix.index = [mapa_isin_nombre.get(i, i) for i in corr_matrix.index]
+        fig_corr = px.imshow(corr_matrix, text_auto=True, aspect="auto", color_continuous_scale='RdBu_r', range_color=[-1, 1], title="Matriz de Correlación")
+        st.plotly_chart(fig_corr, use_container_width=True)
+        
 
 def render_update_panel(isines, mapa_isin_nombre):
     """Muestra el panel para forzar la actualización de los datos."""
