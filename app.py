@@ -6,16 +6,44 @@ import json
 from pathlib import Path
 from streamlit_local_storage import LocalStorage
 
-# Importaciones de los módulos
+# ... (el resto de las importaciones no cambian) ...
 from src.data_manager import DataManager, filtrar_por_horizonte
 from src.metrics import calcular_metricas_desde_rentabilidades
 from src.optimizer import hrp_allocation
 from src.portfolio import Portfolio
 from src.ui_components import render_sidebar, render_main_content, render_update_panel
 
+# ... (la función load_config no cambia) ...
+# ... (la función load_all_navs no cambia) ...
+# ... (la función initialize_session_state no cambia) ...
+# ... (la función save_state_to_browser no cambia) ...
+
+# --- NUEVA FUNCIÓN HELPER ---
+def add_fund_to_config(new_isin, new_name):
+    """Abre fondos.json, añade el nuevo fondo y lo guarda."""
+    config_file = Path("fondos.json")
+    if config_file.exists():
+        with open(config_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    else:
+        data = {"fondos": []}
+    
+    if any(f["isin"] == new_isin for f in data["fondos"]):
+        st.warning(f"El ISIN {new_isin} ya existe en el catálogo.")
+        return False
+    
+    data["fondos"].append({"isin": new_isin, "nombre": new_name})
+    with open(config_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    st.success(f"¡Fondo '{new_name}' añadido! La app se recargará.")
+    return True
+
 # ==============================
-#   CONFIGURACIÓN Y ESTADO
+#   FLUJO PRINCIPAL DE LA APP
 # ==============================
+
+# 1. CARGAR CONFIGURACIÓN
+# ... (sin cambios)
 st.set_page_config(page_title="📊 Analizador de Carteras", layout="wide")
 st.title("📊 Analizador de Carteras de Fondos")
 
@@ -60,13 +88,12 @@ def save_state_to_browser(localS):
     }
     localS.setItem('mi_cartera', json.dumps(cartera_a_guardar), key="storage_cartera")
 
-# ==============================
-#   FLUJO PRINCIPAL DE LA APP
-# ==============================
 
-# 1. CARGAR CONFIGURACIÓN
 fondos_config = load_config()
-if not fondos_config: st.stop()
+if not fondos_config:
+    # Si no hay config, creamos uno vacío para poder añadir fondos
+    Path("fondos.json").write_text('{"fondos": []}', encoding="utf-8")
+
 mapa_isin_nombre = {f['isin']: f['nombre'] for f in fondos_config}
 mapa_nombre_isin = {f"{f['nombre']} ({f['isin']})": f['isin'] for f in fondos_config}
 
@@ -74,14 +101,25 @@ mapa_nombre_isin = {f"{f['nombre']} ({f['isin']})": f['isin'] for f in fondos_co
 localS = LocalStorage()
 initialize_session_state(localS)
 data_manager = DataManager()
-horizonte, run_hrp_opt = render_sidebar(mapa_nombre_isin, mapa_isin_nombre)
+
+# --- LÍNEA MODIFICADA ---
+horizonte, run_hrp_opt, new_fund_details = render_sidebar(mapa_nombre_isin, mapa_isin_nombre)
 save_state_to_browser(localS)
 
+# --- NUEVO BLOQUE DE LÓGICA ---
+# Si la sidebar nos ha devuelto un fondo para añadir, lo procesamos.
+if new_fund_details:
+    if add_fund_to_config(new_fund_details['isin'], new_fund_details['name']):
+        st.cache_data.clear() # Limpiamos la caché
+        st.rerun()           # y recargamos la app
+
+# El resto del flujo principal no cambia...
 # 3. VERIFICAR SI HAY FONDOS EN LA CARTERA
 if not st.session_state.cartera_isines:
     st.info("⬅️ Comienza por añadir fondos a tu cartera en la barra lateral.")
     st.stop()
 
+# ... (el resto del fichero app.py sigue igual)
 # 4. CARGA DE DATOS (SOLO DE LA CARTERA)
 isines_a_cargar = tuple(sorted(set(st.session_state.cartera_isines)))
 force_update_isin = st.session_state.pop('force_update_isin', None)

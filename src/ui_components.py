@@ -41,24 +41,25 @@ def ajustar_pesos_direccional(isines_ordenados, pesos_dict, isin_modificado, pes
     return pesos_dict
 
 # --- COMPONENTES PRINCIPALES ---
+# En src/ui_components.py
+
+# ... (Las importaciones y la función ajustar_pesos_direccional no cambian) ...
+
 def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
     """
-    Renderiza la barra lateral.
-    Reincorpora el formulario para añadir nuevos fondos al catálogo.
+    Renderiza la barra lateral. El formulario ahora devuelve los datos del nuevo fondo
+    en lugar de escribir directamente en el fichero.
     """
     with st.sidebar:
         st.header("Configuración del Análisis")
-
         horizonte = st.selectbox("Horizonte temporal", ["3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
         st.markdown("---")
-
         st.header("💼 Mi Cartera")
+        # ... (La lógica de gestión de cartera no cambia) ...
         st.info("Los fondos que añadas aquí serán los que se analicen y muestren en los gráficos.")
-
         fondos_nombres = list(mapa_nombre_isin.keys())
         candidatos = [n for n in fondos_nombres if mapa_nombre_isin[n] not in st.session_state.cartera_isines]
         add_sel = st.selectbox("Añadir fondo a la cartera", ["—"] + candidatos, index=0)
-
         if add_sel != "—" and st.button("➕ Añadir a cartera"):
             nuevo_isin = mapa_nombre_isin[add_sel]
             st.session_state.cartera_isines.append(nuevo_isin)
@@ -69,45 +70,35 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
                 resto = 100 - sum(st.session_state.pesos.values())
                 st.session_state.pesos[st.session_state.cartera_isines[0]] += resto
             st.rerun()
-
         if not st.session_state.cartera_isines:
             st.warning("Añade fondos para empezar el análisis.")
-
-        # El resto de la lógica de la cartera (sliders, etc.) no cambia...
         pesos_previos = st.session_state.pesos.copy()
         for isin in list(st.session_state.cartera_isines):
             cols = st.columns([5, 2, 1])
             cols[0].markdown(f"**{mapa_isin_nombre.get(isin, isin)}**")
-            st.session_state.pesos[isin] = cols[1].slider(
-                "Peso %", 0, 100, st.session_state.pesos.get(isin, 0), 1, key=f"peso_{isin}"
-            )
+            st.session_state.pesos[isin] = cols[1].slider("Peso %", 0, 100, st.session_state.pesos.get(isin, 0), 1, key=f"peso_{isin}")
             if cols[2].button("🗑️", key=f"remove_{isin}"):
                 st.session_state.cartera_isines.remove(isin)
                 st.session_state.pesos.pop(isin, None)
                 st.rerun()
-        
         isin_modificado = None
         for isin, peso in st.session_state.pesos.items():
             if peso != pesos_previos.get(isin, 0):
                 isin_modificado = isin
                 break
-        
         if isin_modificado:
-            st.session_state.pesos = ajustar_pesos_direccional(
-                st.session_state.cartera_isines, st.session_state.pesos, isin_modificado, pesos_previos
-            )
+            st.session_state.pesos = ajustar_pesos_direccional(st.session_state.cartera_isines, st.session_state.pesos, isin_modificado, pesos_previos)
             st.rerun()
-
         if st.session_state.cartera_isines:
             total_peso = sum(st.session_state.pesos.values())
             st.metric("Suma Total", f"{total_peso}%")
-
         st.markdown("---")
         st.subheader("⚖️ Optimización (HRP)")
         run_hrp_optimization = st.button("🚀 Optimizar Cartera")
 
-        # --- AQUÍ SE AÑADE DE NUEVO EL FORMULARIO ---
+        # --- SECCIÓN MODIFICADA ---
         st.markdown("---")
+        new_fund_to_add = None  # Variable que devolveremos
         with st.expander("➕ Añadir nuevo fondo al catálogo"):
             with st.form("form_add_fund"):
                 new_isin = st.text_input("ISIN del nuevo fondo").strip().upper()
@@ -118,36 +109,36 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
                     if not new_isin or not new_name:
                         st.error("Debes rellenar tanto el ISIN como el nombre.")
                     else:
-                        config_file = Path("fondos.json")
-                        if config_file.exists():
-                            with open(config_file, "r", encoding="utf-8") as f:
-                                data = json.load(f)
-                        else:
-                            data = {"fondos": []}
-                        
-                        if any(f["isin"] == new_isin for f in data["fondos"]):
-                            st.warning(f"El ISIN {new_isin} ya existe en el catálogo.")
-                        else:
-                            data["fondos"].append({"isin": new_isin, "nombre": new_name})
-                            with open(config_file, "w", encoding="utf-8") as f:
-                                json.dump(data, f, indent=2, ensure_ascii=False)
-                            st.success(f"¡Fondo '{new_name}' añadido! La app se recargará.")
-                            st.cache_data.clear() # Limpiar caché para recargar el JSON
-                            st.rerun()
+                        # En lugar de escribir el fichero, preparamos los datos para devolverlos
+                        new_fund_to_add = {"isin": new_isin, "name": new_name}
+        
+    # Devolvemos la nueva variable junto a las demás
+    return horizonte, run_hrp_optimization, new_fund_to_add
 
-    return horizonte, run_hrp_optimization
-
-# En src/ui_components.py
-
-
-# ... (La función render_sidebar y ajustar_pesos_direccional no cambian) ...
-
-# En src/ui_components.py
-# ... (las importaciones y otras funciones no cambian) ...
 
 def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
     """Renderiza el contenido principal. Usa Plotly para gráficos interactivos."""
     st.header("Análisis de la Cartera")
+
+    # --- NUEVO: GRÁFICO DE TARTA PARA LA DISTRIBUCIÓN DE LA CARTERA ---
+    pesos = st.session_state.get('pesos', {})
+    
+    # Solo mostrar el gráfico si hay fondos con peso en la cartera
+    if pesos and sum(pesos.values()) > 0:
+        st.subheader("📊 Distribución de la Cartera")
+        df_pie = pd.DataFrame(list(pesos.items()), columns=['ISIN', 'Peso'])
+        # Añadimos los nombres de los fondos para que las etiquetas sean claras
+        df_pie['Fondo'] = df_pie['ISIN'].map(mapa_isin_nombre)
+        
+        # Creamos el gráfico de donut con Plotly Express
+        fig_pie = px.pie(df_pie,
+                         names='Fondo',
+                         values='Peso',
+                         title='Composición Actual de la Cartera',
+                         hole=.3) # El 'hole' lo convierte en un gráfico de donut
+        
+        fig_pie.update_traces(textposition='inside', textinfo='percent+label', pull=[0.05]*len(df_pie))
+        st.plotly_chart(fig_pie, use_container_width=True)
 
     # --- TABLA DE MÉTRICAS (no cambia) ---
     st.subheader(f"📑 Métricas para el horizonte: {st.session_state.horizonte}")
