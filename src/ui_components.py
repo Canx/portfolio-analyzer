@@ -40,26 +40,28 @@ def ajustar_pesos_direccional(isines_ordenados, pesos_dict, isin_modificado, pes
         pesos_dict[isines_ajustables[0]] += 100 - suma_actual
     return pesos_dict
 
-# --- COMPONENTES PRINCIPALES ---
 # En src/ui_components.py
 
 # ... (Las importaciones y la función ajustar_pesos_direccional no cambian) ...
 
 def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
     """
-    Renderiza la barra lateral. El formulario ahora devuelve los datos del nuevo fondo
-    en lugar de escribir directamente en el fichero.
+    Renderiza la barra lateral. El formulario para añadir fondos ahora
+    es siempre visible, sin necesidad de desplegarlo.
     """
     with st.sidebar:
         st.header("Configuración del Análisis")
+
         horizonte = st.selectbox("Horizonte temporal", ["3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
         st.markdown("---")
+
         st.header("💼 Mi Cartera")
-        # ... (La lógica de gestión de cartera no cambia) ...
         st.info("Los fondos que añadas aquí serán los que se analicen y muestren en los gráficos.")
+
         fondos_nombres = list(mapa_nombre_isin.keys())
         candidatos = [n for n in fondos_nombres if mapa_nombre_isin[n] not in st.session_state.cartera_isines]
         add_sel = st.selectbox("Añadir fondo a la cartera", ["—"] + candidatos, index=0)
+
         if add_sel != "—" and st.button("➕ Añadir a cartera"):
             nuevo_isin = mapa_nombre_isin[add_sel]
             st.session_state.cartera_isines.append(nuevo_isin)
@@ -70,50 +72,58 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
                 resto = 100 - sum(st.session_state.pesos.values())
                 st.session_state.pesos[st.session_state.cartera_isines[0]] += resto
             st.rerun()
+
         if not st.session_state.cartera_isines:
             st.warning("Añade fondos para empezar el análisis.")
+
         pesos_previos = st.session_state.pesos.copy()
         for isin in list(st.session_state.cartera_isines):
             cols = st.columns([5, 2, 1])
             cols[0].markdown(f"**{mapa_isin_nombre.get(isin, isin)}**")
-            st.session_state.pesos[isin] = cols[1].slider("Peso %", 0, 100, st.session_state.pesos.get(isin, 0), 1, key=f"peso_{isin}")
+            st.session_state.pesos[isin] = cols[1].slider(
+                "Peso %", 0, 100, st.session_state.pesos.get(isin, 0), 1, key=f"peso_{isin}"
+            )
             if cols[2].button("🗑️", key=f"remove_{isin}"):
                 st.session_state.cartera_isines.remove(isin)
                 st.session_state.pesos.pop(isin, None)
                 st.rerun()
+        
         isin_modificado = None
         for isin, peso in st.session_state.pesos.items():
             if peso != pesos_previos.get(isin, 0):
                 isin_modificado = isin
                 break
+        
         if isin_modificado:
-            st.session_state.pesos = ajustar_pesos_direccional(st.session_state.cartera_isines, st.session_state.pesos, isin_modificado, pesos_previos)
+            st.session_state.pesos = ajustar_pesos_direccional(
+                st.session_state.cartera_isines, st.session_state.pesos, isin_modificado, pesos_previos
+            )
             st.rerun()
+
         if st.session_state.cartera_isines:
             total_peso = sum(st.session_state.pesos.values())
             st.metric("Suma Total", f"{total_peso}%")
+
         st.markdown("---")
         st.subheader("⚖️ Optimización (HRP)")
         run_hrp_optimization = st.button("🚀 Optimizar Cartera")
-
-        # --- SECCIÓN MODIFICADA ---
         st.markdown("---")
-        new_fund_to_add = None  # Variable que devolveremos
-        with st.expander("➕ Añadir nuevo fondo al catálogo"):
-            with st.form("form_add_fund"):
-                new_isin = st.text_input("ISIN del nuevo fondo").strip().upper()
-                new_name = st.text_input("Nombre del nuevo fondo").strip()
-                submitted = st.form_submit_button("Añadir")
 
-                if submitted:
-                    if not new_isin or not new_name:
-                        st.error("Debes rellenar tanto el ISIN como el nombre.")
-                    else:
-                        # En lugar de escribir el fichero, preparamos los datos para devolverlos
-                        new_fund_to_add = {"isin": new_isin, "name": new_name}
+        # --- SECCIÓN MODIFICADA: EL FORMULARIO AHORA ES SIEMPRE VISIBLE ---
+        st.subheader("➕ Añadir fondo al catálogo")
+        isin_to_add = None
+        with st.form("form_add_fund_by_isin"):
+            new_isin = st.text_input(
+                "Introduce un ISIN para buscarlo",
+                placeholder="Ej: IE00B4L5Y983",
+                label_visibility="collapsed"
+            ).strip().upper()
+            submitted = st.form_submit_button("Buscar y Añadir")
+
+            if submitted and new_isin:
+                isin_to_add = new_isin
         
-    # Devolvemos la nueva variable junto a las demás
-    return horizonte, run_hrp_optimization, new_fund_to_add
+    return horizonte, run_hrp_optimization, isin_to_add
 
 
 def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):

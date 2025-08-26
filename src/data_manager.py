@@ -5,6 +5,7 @@ import mstarpy as ms
 from pathlib import Path
 from datetime import date, timedelta
 import streamlit as st
+import json
 
 class DataManager:
     """
@@ -113,3 +114,53 @@ def filtrar_por_horizonte(df: pd.DataFrame, horizonte: str) -> pd.DataFrame:
     
     # Si algo falló (ej. 'm' sin número válido), devuelve el original
     return df
+
+
+def find_and_add_fund_by_isin(new_isin):
+    """
+    Busca un ISIN usando la clase ms.Funds(), que es el método correcto.
+    Si lo encuentra, verifica los datos y lo añade a fondos.json.
+    """
+    # Paso 1: Comprobación local (no cambia)
+    config_file = Path("fondos.json")
+    data = {"fondos": []}
+    if config_file.exists():
+        with open(config_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+    if any(f["isin"] == new_isin for f in data["fondos"]):
+        fund_name = next((f["nombre"] for f in data["fondos"] if f["isin"] == new_isin), new_isin)
+        st.warning(f"El fondo '{fund_name}' ({new_isin}) ya existe en el catálogo.")
+        return False
+
+    # --- Paso 2: Usar ms.Funds(term=...) para buscar el fondo ---
+    try:
+        st.info(f"Buscando información para el ISIN {new_isin} en Morningstar...")
+
+        # La clase Funds es el propio mecanismo de búsqueda.
+        # Lanzará ValueError si no encuentra nada.
+        fund = ms.Funds(term=new_isin)
+
+        # Extraemos el nombre y el ISIN oficiales del objeto encontrado
+        found_name = fund.name
+        found_isin = fund.isin
+
+        # Es una buena práctica verificar que el ISIN devuelto coincide
+        if found_isin != new_isin:
+            st.warning(f"El ISIN encontrado ({found_isin}) no coincide con el introducido. Se añadirá el ISIN correcto.")
+        
+        # --- Paso 3: Añadir el fondo verificado al fichero ---
+        data["fondos"].append({"isin": found_isin, "nombre": found_name})
+        with open(config_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        st.success(f"¡Fondo '{found_name}' añadido! La app se recargará.")
+        return True
+
+    except ValueError:
+        # Esta es la excepción que la librería lanza cuando no encuentra un fondo.
+        st.error(f"Error: No se pudo encontrar ningún fondo con el ISIN '{new_isin}'. Verifique que sea correcto.")
+        return False
+    except Exception as e:
+        # Captura de otros posibles errores (red, etc.)
+        st.error(f"Ocurrió un error inesperado al buscar el fondo: {e}")
+        return False

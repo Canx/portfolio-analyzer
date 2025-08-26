@@ -7,7 +7,7 @@ from pathlib import Path
 from streamlit_local_storage import LocalStorage
 
 # ... (el resto de las importaciones no cambian) ...
-from src.data_manager import DataManager, filtrar_por_horizonte
+from src.data_manager import DataManager, filtrar_por_horizonte, find_and_add_fund_by_isin
 from src.metrics import calcular_metricas_desde_rentabilidades
 from src.optimizer import hrp_allocation
 from src.portfolio import Portfolio
@@ -103,13 +103,13 @@ initialize_session_state(localS)
 data_manager = DataManager()
 
 # --- LÍNEA MODIFICADA ---
-horizonte, run_hrp_opt, new_fund_details = render_sidebar(mapa_nombre_isin, mapa_isin_nombre)
+horizonte, run_hrp_opt, isin_to_add = render_sidebar(mapa_nombre_isin, mapa_isin_nombre)
 save_state_to_browser(localS)
 
-# --- NUEVO BLOQUE DE LÓGICA ---
-# Si la sidebar nos ha devuelto un fondo para añadir, lo procesamos.
-if new_fund_details:
-    if add_fund_to_config(new_fund_details['isin'], new_fund_details['name']):
+# --- BLOQUE DE LÓGICA MODIFICADO ---
+# Si la sidebar nos ha devuelto un ISIN para añadir, lo procesamos.
+if isin_to_add:
+    if find_and_add_fund_by_isin(isin_to_add):
         st.cache_data.clear() # Limpiamos la caché
         st.rerun()           # y recargamos la app
 
