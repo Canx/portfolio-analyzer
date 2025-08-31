@@ -13,7 +13,7 @@ from src.data_manager import (
     find_and_add_fund_by_isin
 )
 from src.metrics import calcular_metricas_desde_rentabilidades
-from src.optimizer import hrp_allocation
+from src.optimizer import optimize_portfolio
 from src.portfolio import Portfolio
 from src.ui_components import render_sidebar, render_main_content, render_update_panel
 
@@ -107,7 +107,7 @@ initialize_session_state(localS)
 data_manager = DataManager()
 
 # --- LÍNEA MODIFICADA ---
-horizonte, run_hrp_opt = render_sidebar(mapa_nombre_isin, mapa_isin_nombre)
+horizonte, run_optimization, modelo_seleccionado, risk_measure = render_sidebar(mapa_nombre_isin, mapa_isin_nombre)
 save_state_to_browser(localS)
 
 # 3. VERIFICAR SI HAY FONDOS EN LA CARTERA
@@ -130,15 +130,31 @@ filtered_navs = filtrar_por_horizonte(all_navs_df, horizonte)
 daily_returns = filtered_navs.pct_change().dropna()
 
 # 6. LÓGICA DE OPTIMIZACIÓN
-if run_hrp_opt and not daily_returns.empty:
-    pesos_opt = hrp_allocation(daily_returns.cov(), daily_returns.corr())
-    pesos_opt_dict = {isin: int(round(p * 100)) for isin, p in pesos_opt.items()}
-    resto = 100 - sum(pesos_opt_dict.values())
-    if resto != 0 and pesos_opt.size > 0:
-        pesos_opt_dict[pesos_opt.idxmax()] += resto
-    st.session_state.pesos = pesos_opt_dict
-    st.success("Cartera optimizada con HRP ✅")
-    st.rerun()
+if run_optimization and not daily_returns.empty:
+    
+    # Mensaje de feedback más completo para el usuario
+    feedback = f"Ejecutando optimización con el modelo: {modelo_seleccionado}"
+    if modelo_seleccionado == 'HRP':
+        feedback += f" (Medida de Riesgo: {risk_measure})"
+    st.info(feedback)
+    
+    # Pasamos la medida de riesgo a nuestra función de optimización
+    pesos_opt = optimize_portfolio(
+        daily_returns=daily_returns,
+        model=modelo_seleccionado,
+        risk_measure=risk_measure
+    )
+
+    if pesos_opt is not None:
+        pesos_opt_dict = {isin: int(round(p * 100)) for isin, p in pesos_opt.items()}
+        resto = 100 - sum(pesos_opt_dict.values())
+        if resto != 0 and not pesos_opt.empty:
+            pesos_opt_dict[pesos_opt.idxmax()] += resto
+        st.session_state.pesos = pesos_opt_dict
+        st.success(f"Cartera optimizada con {modelo_seleccionado} ✅")
+        st.rerun()
+    else:
+        st.error("La optimización falló. Puede que no haya suficientes datos para el periodo seleccionado.")
 
 # 7. CÁLCULO DE MÉTRICAS Y CARTERA
 metricas = []

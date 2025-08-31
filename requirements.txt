@@ -7,3 +7,4 @@ mstarpy
 streamlit-local-storage
 scipy
 plotly
+Riskfolio-Lib

@@ -108,11 +108,40 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
             st.metric("Suma Total", f"{total_peso}%")
 
         st.markdown("---")
-        st.subheader("⚖️ Optimización (HRP)")
-        run_hrp_optimization = st.button("🚀 Optimizar Cartera")
-        st.markdown("---")
+        st.subheader("⚖️ Optimización de Cartera")
+
+        # Creamos el selector para elegir el modelo
+        modelo_optimización = st.selectbox(
+            "Selecciona un modelo de optimización",
+            options=["HRP" ], #"MV", "MSR"],
+            format_func=lambda x: {
+                "HRP": "Hierarchical Risk Parity"
+                #"MV": "Mínima Volatilidad",
+                #"MSR": "Máximo Ratio de Sharpe"
+            }[x]
+        )
         
-    return horizonte, run_hrp_optimization
+        risk_measure = 'MV' # Valor por defecto
+        if modelo_optimización == 'HRP':
+            # Creamos una lista curada con las medidas más comunes y útiles
+            rms_disponibles = ['MV', 'MAD', 'MSV', 'VaR', 'CVaR', 'CDaR']
+            rms_nombres = {
+                'MV': 'Varianza (Clásico)',
+                'MAD': 'Desviación Absoluta',
+                'MSV': 'Semi Varianza (Pérdidas)',
+                'VaR': 'Valor en Riesgo',
+                'CVaR': 'Valor en Riesgo Condicional',
+                'CDaR': 'Drawdown Condicional en Riesgo'
+            }
+            risk_measure = st.selectbox(
+                "Medida de Riesgo (para HRP)",
+                options=rms_disponibles,
+                format_func=lambda x: rms_nombres.get(x, x)
+            )
+        
+        run_optimization = st.button("🚀 Optimizar Cartera")
+        
+    return horizonte, run_optimization, modelo_optimización, risk_measure
 
 
 def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
