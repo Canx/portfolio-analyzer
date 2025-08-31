@@ -11,6 +11,9 @@ import seaborn as sns
 from streamlit_local_storage import LocalStorage
 import plotly.express as px
 import plotly.graph_objects as go
+from src.data_manager import (
+    update_fund_details_in_config
+)
 
 
 # --- HELPERS DE UI ---
@@ -108,22 +111,8 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
         st.subheader("⚖️ Optimización (HRP)")
         run_hrp_optimization = st.button("🚀 Optimizar Cartera")
         st.markdown("---")
-
-        # --- SECCIÓN MODIFICADA: EL FORMULARIO AHORA ES SIEMPRE VISIBLE ---
-        st.subheader("➕ Añadir fondo al catálogo")
-        isin_to_add = None
-        with st.form("form_add_fund_by_isin"):
-            new_isin = st.text_input(
-                "Introduce un ISIN para buscarlo",
-                placeholder="Ej: IE00B4L5Y983",
-                label_visibility="collapsed"
-            ).strip().upper()
-            submitted = st.form_submit_button("Buscar y Añadir")
-
-            if submitted and new_isin:
-                isin_to_add = new_isin
         
-    return horizonte, run_hrp_optimization, isin_to_add
+    return horizonte, run_hrp_optimization
 
 
 def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
@@ -232,11 +221,23 @@ def render_update_panel(isines, mapa_isin_nombre):
         
         file_path = Path("fondos_data") / f"{isin}.csv"
         if file_path.exists():
-            last_date = pd.read_csv(file_path, usecols=['date']).iloc[-1, 0]
-            c2.write(f"Último dato: {last_date}")
+            try:
+                # --- AQUÍ ESTÁ EL ARREGLO ---
+                # 1. Leemos solo la columna de fechas para que sea rápido.
+                df_dates = pd.read_csv(file_path, usecols=['date'])
+                # 2. Obtenemos el último valor de esa columna.
+                last_date = df_dates.iloc[-1, 0]
+                c2.write(f"Último dato: {last_date}")
+            except (pd.errors.EmptyDataError, IndexError):
+                c2.write("Fichero vacío")
         else:
             c2.write("No descargado")
 
         if c3.button("🔄 Actualizar", key=f"update_{isin}"):
+            # 1. Forzamos la actualización de metadatos en fondos.json
+            update_fund_details_in_config(isin)
+            # 2. Forzamos la actualización del NAV (CSV)
             st.session_state.force_update_isin = isin
+            # 3. Limpiamos toda la caché para recargar ambos ficheros y re-ejecutamos
+            st.cache_data.clear()
             st.rerun()
