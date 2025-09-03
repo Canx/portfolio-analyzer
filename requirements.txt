@@ -8,3 +8,4 @@ streamlit-local-storage
 scipy
 plotly
 Riskfolio-Lib
+pytest
