@@ -42,19 +42,40 @@ def ajustar_pesos_direccional(isines_ordenados, pesos_dict, isin_modificado, pes
     if suma_actual != 100 and isines_ajustables:
         pesos_dict[isines_ajustables[0]] += 100 - suma_actual
 
+# En src/ui_components.py
+
+# ... (Las importaciones y la función ajustar_pesos_direccional no cambian) ...
+
 def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
     """
-    Renderiza la barra lateral. Versión final con la lógica de ordenación
-    y el UnboundLocalError corregidos.
+    Renderiza la barra lateral. Corregido el StreamlitAPIException al crear carteras.
     """
     with st.sidebar:
         st.header("Configuración del Análisis")
-        horizonte = st.selectbox("Horizonte temporal", ["3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
+        horizonte = st.selectbox("Horizonte temporal", ["1m", "3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
         st.markdown("---")
+
         st.header("🗂️ Gestor de Carteras")
-        
         lista_carteras = list(st.session_state.carteras.keys())
-        st.selectbox("Cartera Activa", lista_carteras, key="cartera_activa")
+        
+        # --- LÓGICA DEL SELECTBOX MODIFICADA ---
+        # Guardamos el índice actual para que el desplegable no se "resete" visualmente
+        try:
+            indice_actual = lista_carteras.index(st.session_state.cartera_activa)
+        except (ValueError, AttributeError):
+            indice_actual = 0
+            
+        # Quitamos el argumento 'key' y gestionamos el cambio manualmente
+        cartera_seleccionada = st.selectbox(
+            "Cartera Activa",
+            lista_carteras,
+            index=indice_actual
+        )
+        
+        # Si el usuario cambia la selección, actualizamos el estado y recargamos
+        if cartera_seleccionada != st.session_state.cartera_activa:
+            st.session_state.cartera_activa = cartera_seleccionada
+            st.rerun()
 
         with st.expander("Opciones de Gestión"):
             with st.form("form_create_portfolio"):
@@ -65,6 +86,7 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
                         st.warning("Ya existe una cartera con ese nombre.")
                     else:
                         st.session_state.carteras[new_portfolio_name] = {"pesos": {}}
+                        # Ahora este cambio es seguro porque el selectbox no tiene el control exclusivo
                         st.session_state.cartera_activa = new_portfolio_name
                         st.rerun()
 
@@ -76,11 +98,10 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
         
         st.markdown("---")
 
-        # Inicializamos las variables de retorno con valores por defecto
+        # ... (El resto de la función sigue exactamente igual) ...
         run_optimization = False
         modelo_optimización = None
         risk_measure = None
-
         if st.session_state.cartera_activa:
             st.header(f"💼 Composición de '{st.session_state.cartera_activa}'")
             
