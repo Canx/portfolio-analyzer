@@ -1,56 +1,113 @@
-# app.py
-
 import streamlit as st
 import pandas as pd
 import json
 from pathlib import Path
 from streamlit_local_storage import LocalStorage
+from src.utils import load_config, load_all_navs
 
-# ... (el resto de las importaciones no cambian) ...
-from src.data_manager import (
-    DataManager,
-    filtrar_por_horizonte,
-    find_and_add_fund_by_isin
-)
+# Importaciones de los módulos
+from src.data_manager import DataManager, filtrar_por_horizonte
 from src.metrics import calcular_metricas_desde_rentabilidades
 from src.optimizer import optimize_portfolio
 from src.portfolio import Portfolio
-from src.ui_components import render_sidebar, render_main_content, render_update_panel
+from src.ui_components import render_sidebar, render_main_content, render_update_panel # Quitamos la función de añadir fondo que ya no está aquí
+from src.state import initialize_session_state # <-- Importamos la nueva función
 
-# ... (la función load_config no cambia) ...
-# ... (la función load_all_navs no cambia) ...
-# ... (la función initialize_session_state no cambia) ...
-# ... (la función save_state_to_browser no cambia) ...
+# --- INICIALIZAMOS EL ESTADO AL PRINCIPIO DE LA PÁGINA ---
+initialize_session_state()
 
-# --- NUEVA FUNCIÓN HELPER ---
-def add_fund_to_config(new_isin, new_name):
-    """Abre fondos.json, añade el nuevo fondo y lo guarda."""
-    config_file = Path("fondos.json")
-    if config_file.exists():
-        with open(config_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    else:
-        data = {"fondos": []}
-    
-    if any(f["isin"] == new_isin for f in data["fondos"]):
-        st.warning(f"El ISIN {new_isin} ya existe en el catálogo.")
-        return False
-    
-    data["fondos"].append({"isin": new_isin, "nombre": new_name})
-    with open(config_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    st.success(f"¡Fondo '{new_name}' añadido! La app se recargará.")
-    return True
+
+# --- FUNCIÓN SAVE STATE (Adaptada para la nueva estructura) ---
+def save_state_to_browser():
+    localS = LocalStorage()
+    # Guardamos el diccionario completo de carteras
+    localS.setItem('mis_carteras', json.dumps(st.session_state.carteras), key="storage_carteras")
 
 # ==============================
-#   FLUJO PRINCIPAL DE LA APP
+#   FLUJO PRINCIPAL DE LA PÁGINA
 # ==============================
 
 # 1. CARGAR CONFIGURACIÓN
-# ... (sin cambios)
-st.set_page_config(page_title="📊 Analizador de Carteras", layout="wide")
-st.title("📊 Analizador de Carteras de Fondos")
+st.title("📈 Análisis de Cartera")
+fondos_config = load_config() # Necesitamos una función load_config aquí también
+if not fondos_config: st.stop()
+mapa_isin_nombre = {f['isin']: f['nombre'] for f in fondos_config}
+mapa_nombre_isin = {f"{f['nombre']} ({f['isin']})": f['isin'] for f in fondos_config}
+data_manager = DataManager()
 
+# 2. RENDERIZAR SIDEBAR Y OBTENER ACCIONES
+horizonte, run_optimization, modelo_seleccionado, risk_measure = render_sidebar(mapa_nombre_isin, mapa_isin_nombre)
+save_state_to_browser() # Guardamos el estado en cada interacción
+
+# 3. VERIFICAR SI HAY UNA CARTERA ACTIVA
+if not st.session_state.get('cartera_activa') or not st.session_state.carteras.get(st.session_state.cartera_activa):
+    st.info("⬅️ Por favor, crea o selecciona una cartera en la barra lateral para empezar el análisis.")
+    st.stop()
+
+# 4. OBTENER DATOS DE LA CARTERA ACTIVA
+cartera_activa_nombre = st.session_state.cartera_activa
+cartera_activa_data = st.session_state.carteras[cartera_activa_nombre]
+pesos_cartera_activa = cartera_activa_data['pesos']
+isines_a_cargar = tuple(pesos_cartera_activa.keys())
+
+if not isines_a_cargar:
+    st.warning("Tu cartera está vacía. Añade fondos desde la barra lateral.")
+    st.stop()
+
+# 5. CARGA DE DATOS Y PROCESADO
+force_update_isin = st.session_state.pop('force_update_isin', None)
+all_navs_df = load_all_navs(data_manager, isines_a_cargar, force_update_isin=force_update_isin)
+if all_navs_df.empty: st.stop()
+
+filtered_navs = filtrar_por_horizonte(all_navs_df, horizonte)
+daily_returns = filtered_navs.pct_change().dropna()
+
+# 6. LÓGICA DE OPTIMIZACIÓN
+if run_optimization and not daily_returns.empty:
+    st.info(f"Ejecutando optimización...")
+    pesos_opt = optimize_portfolio(daily_returns, model=modelo_seleccionado, risk_measure=risk_measure)
+    if pesos_opt is not None:
+        pesos_opt_dict = {isin: int(round(p * 100)) for isin, p in pesos_opt.items()}
+        resto = 100 - sum(pesos_opt_dict.values())
+        if resto != 0 and not pesos_opt.empty:
+            pesos_opt_dict[pesos_opt.idxmax()] += resto
+        # Actualizamos los pesos de la cartera activa
+        st.session_state.carteras[cartera_activa_nombre]['pesos'] = pesos_opt_dict
+        st.success(f"Cartera '{cartera_activa_nombre}' optimizada con {modelo_seleccionado} ✅")
+        st.rerun()
+
+# 7. CÁLCULO DE MÉTRICAS Y CARTERA
+mapa_datos_fondos = {f['isin']: f for f in fondos_config}
+metricas = []
+for isin in daily_returns.columns:
+    m = calcular_metricas_desde_rentabilidades(daily_returns[isin])
+    datos_fondo = mapa_datos_fondos.get(isin, {})
+    m.update(datos_fondo)
+    metricas.append(m)
+df_metrics = pd.DataFrame(metricas)
+
+portfolio = Portfolio(filtered_navs, pesos_cartera_activa)
+if portfolio and portfolio.nav is not None:
+    metricas_cartera = portfolio.calculate_metrics()
+    metricas_cartera['nombre'] = f"💼 {cartera_activa_nombre}"
+    df_metrics = pd.concat([pd.DataFrame([metricas_cartera]), df_metrics], ignore_index=True)
+
+# --- NUEVO BLOQUE DE CÓDIGO PARA ORDENAR ---
+# Creamos una columna temporal con los pesos para poder ordenar
+df_metrics['peso_cartera'] = df_metrics['isin'].map(pesos_cartera_activa).fillna(0)
+# La cartera agregada ("Mi Cartera") no tiene ISIN, le damos el peso máximo para que salga arriba
+df_metrics.loc[df_metrics['nombre'].str.startswith('💼'), 'peso_cartera'] = 101
+# Ordenamos el DataFrame por este nuevo peso
+df_metrics = df_metrics.sort_values(by='peso_cartera', ascending=False).drop(columns=['peso_cartera'])
+
+
+# 8. RENDERIZAR RESULTADOS
+render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre)
+
+# Opcional: El panel de actualización puede seguir aquí o moverse al explorador
+# render_update_panel(isines_a_cargar, mapa_isin_nombre)
+
+# Necesitas añadir estas funciones aquí si no están en un módulo importado
 @st.cache_data
 def load_config(config_file="fondos.json"):
     path = Path(config_file)
@@ -60,116 +117,11 @@ def load_config(config_file="fondos.json"):
 
 @st.cache_data
 def load_all_navs(_data_manager, isines: tuple, force_update_isin: str = None):
-    with st.spinner(f"Cargando datos de {len(isines)} fondos..."):
+    with st.spinner(f"Cargando datos..."):
         all_navs = {}
         for isin in isines:
             force = (isin == force_update_isin)
             df = _data_manager.get_fund_nav(isin, force_to_today=force)
-            if df is not None and 'nav' in df.columns:
-                all_navs[isin] = df['nav']
+            if df is not None: all_navs[isin] = df['nav']
     if not all_navs: return pd.DataFrame()
     return pd.concat(all_navs, axis=1).ffill()
-
-def initialize_session_state(localS):
-    """Inicializa solo el estado de la cartera."""
-    if 'initialized' not in st.session_state:
-        json_cartera = localS.getItem('mi_cartera')
-        cartera_guardada = {}
-        if json_cartera:
-            try:
-                cartera_guardada = json.loads(json_cartera)
-            except json.JSONDecodeError:
-                st.warning("Formato de cartera guardada incorrecto.")
-        st.session_state.cartera_isines = cartera_guardada.get('fondos', [])
-        st.session_state.pesos = cartera_guardada.get('pesos', {})
-        st.session_state.initialized = True
-
-def save_state_to_browser(localS):
-    """Guarda solo el estado de la cartera."""
-    cartera_a_guardar = {
-        "fondos": st.session_state.cartera_isines,
-        "pesos": st.session_state.pesos
-    }
-    localS.setItem('mi_cartera', json.dumps(cartera_a_guardar), key="storage_cartera")
-
-
-fondos_config = load_config()
-if not fondos_config:
-    # Si no hay config, creamos uno vacío para poder añadir fondos
-    Path("fondos.json").write_text('{"fondos": []}', encoding="utf-8")
-
-mapa_isin_nombre = {f['isin']: f['nombre'] for f in fondos_config}
-mapa_nombre_isin = {f"{f['nombre']} ({f['isin']})": f['isin'] for f in fondos_config}
-
-# 2. INICIALIZAR ESTADO Y UI
-localS = LocalStorage()
-initialize_session_state(localS)
-data_manager = DataManager()
-
-# --- LÍNEA MODIFICADA ---
-horizonte, run_optimization, modelo_seleccionado, risk_measure = render_sidebar(mapa_nombre_isin, mapa_isin_nombre)
-save_state_to_browser(localS)
-
-# 3. VERIFICAR SI HAY FONDOS EN LA CARTERA
-if not st.session_state.cartera_isines:
-    st.info("⬅️ Comienza por añadir fondos a tu cartera en la barra lateral.")
-    st.stop()
-
-# ... (el resto del fichero app.py sigue igual)
-# 4. CARGA DE DATOS (SOLO DE LA CARTERA)
-isines_a_cargar = tuple(sorted(set(st.session_state.cartera_isines)))
-force_update_isin = st.session_state.pop('force_update_isin', None)
-all_navs_df = load_all_navs(data_manager, isines_a_cargar, force_update_isin=force_update_isin)
-
-if all_navs_df.empty:
-    st.warning("No se pudieron cargar datos para los fondos de la cartera.")
-    st.stop()
-
-# 5. FILTRADO Y PROCESADO
-filtered_navs = filtrar_por_horizonte(all_navs_df, horizonte)
-daily_returns = filtered_navs.pct_change().dropna()
-
-# 6. LÓGICA DE OPTIMIZACIÓN
-if run_optimization and not daily_returns.empty:
-    
-    # Mensaje de feedback más completo para el usuario
-    feedback = f"Ejecutando optimización con el modelo: {modelo_seleccionado}"
-    if modelo_seleccionado == 'HRP':
-        feedback += f" (Medida de Riesgo: {risk_measure})"
-    st.info(feedback)
-    
-    # Pasamos la medida de riesgo a nuestra función de optimización
-    pesos_opt = optimize_portfolio(
-        daily_returns=daily_returns,
-        model=modelo_seleccionado,
-        risk_measure=risk_measure
-    )
-
-    if pesos_opt is not None:
-        pesos_opt_dict = {isin: int(round(p * 100)) for isin, p in pesos_opt.items()}
-        resto = 100 - sum(pesos_opt_dict.values())
-        if resto != 0 and not pesos_opt.empty:
-            pesos_opt_dict[pesos_opt.idxmax()] += resto
-        st.session_state.pesos = pesos_opt_dict
-        st.success(f"Cartera optimizada con {modelo_seleccionado} ✅")
-        st.rerun()
-    else:
-        st.error("La optimización falló. Puede que no haya suficientes datos para el periodo seleccionado.")
-
-# 7. CÁLCULO DE MÉTRICAS Y CARTERA
-metricas = []
-for isin in daily_returns.columns:
-    m = calcular_metricas_desde_rentabilidades(daily_returns[isin])
-    m["isin"] = isin
-    m["nombre"] = mapa_isin_nombre.get(isin, isin)
-    metricas.append(m)
-df_metrics = pd.DataFrame(metricas)
-
-portfolio = Portfolio(filtered_navs, st.session_state.pesos)
-if portfolio and portfolio.nav is not None:
-    metricas_cartera = portfolio.calculate_metrics()
-    df_metrics = pd.concat([pd.DataFrame([metricas_cartera]), df_metrics], ignore_index=True)
-
-# 8. RENDERIZAR RESULTADOS
-render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre)
-render_update_panel(isines_a_cargar, mapa_isin_nombre)
