@@ -8,38 +8,28 @@ import streamlit as st
 import json
 
 
-# --- La clase DataManager y filtrar_por_horizonte no cambian ---
+# En src/data_manager.py
+
 class DataManager:
-    # ... (código de la clase sin cambios)
     """
     Gestiona la obtención y el cacheo local de los datos NAV de los fondos.
     """
-
     def __init__(self, data_dir: str = "fondos_data"):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(exist_ok=True)
         self.today = date.today()
         self.recency_threshold_days = 5
 
-    def _download_nav(
-        self, isin: str, start_date: date, end_date: date
-    ) -> pd.DataFrame | None:
-        st.write(f"🌐 Llamando a la API para {isin} desde {start_date}...")
+    def _download_nav(self, isin: str, start_date: date, end_date: date) -> pd.DataFrame | None:
+        """Descarga datos de Morningstar para un ISIN y un rango de fechas."""
+        # --- MENSAJE ELIMINADO ---
+        # st.sidebar.info(f"🌐 Llamando a la API para {isin}...")
         try:
             fund = ms.Funds(isin)
             nav_data = pd.DataFrame(fund.nav(start_date=start_date, end_date=end_date))
-            if nav_data.empty:
-                return None
-            nav_col = next(
-                (
-                    c
-                    for c in ["nav", "accumulatedNav", "totalReturn"]
-                    if c in nav_data.columns
-                ),
-                None,
-            )
-            if nav_col is None:
-                return None
+            if nav_data.empty: return None
+            nav_col = next((c for c in ["nav", "accumulatedNav", "totalReturn"] if c in nav_data.columns), None)
+            if nav_col is None: return None
             df = nav_data.rename(columns={nav_col: "nav"})[["date", "nav"]]
             df["date"] = pd.to_datetime(df["date"])
             return df.sort_values("date").drop_duplicates(subset="date")
@@ -47,9 +37,7 @@ class DataManager:
             st.error(f"Error descargando {isin}: {e}")
             return None
 
-    def get_fund_nav(
-        self, isin: str, force_to_today: bool = False
-    ) -> pd.DataFrame | None:
+    def get_fund_nav(self, isin: str, force_to_today: bool = False) -> pd.DataFrame | None:
         file_path = self.data_dir / f"{isin}.csv"
         df = None
         if file_path.exists():
@@ -58,24 +46,24 @@ class DataManager:
                 df.index = pd.to_datetime(df.index)
             except Exception:
                 df = None
+        
         if not force_to_today and df is not None and not df.empty:
             last_date = df.index.max().date()
             if last_date >= self.today - timedelta(days=self.recency_threshold_days):
-                st.write(
-                    f"📂 Datos de {isin} ya son recientes ({last_date}). Usando caché local."
-                )
+                # --- MENSAJE ELIMINADO ---
+                # st.sidebar.info(f"📂 Datos de {isin} recientes. Usando caché.")
                 return df
+
         start_update_date = date(1900, 1, 1)
         if df is not None and not df.empty:
             start_update_date = df.index.max().date() + timedelta(days=1)
+        
         if start_update_date <= self.today:
-            nuevos_datos = self._download_nav(
-                isin, start_date=start_update_date, end_date=self.today
-            )
+            nuevos_datos = self._download_nav(isin, start_date=start_update_date, end_date=self.today)
             if nuevos_datos is not None and not nuevos_datos.empty:
-                nuevos_datos.set_index("date", inplace=True)
+                nuevos_datos.set_index('date', inplace=True)
                 df = pd.concat([df, nuevos_datos]) if df is not None else nuevos_datos
-                df = df[~df.index.duplicated(keep="last")].sort_index()
+                df = df[~df.index.duplicated(keep='last')].sort_index()
                 df.to_csv(file_path, index=True)
         return df
 

@@ -2,82 +2,60 @@
 
 import streamlit as st
 import pandas as pd
+import json
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
-from src.data_manager import update_fund_details_in_config
-
 
 # --- HELPERS DE UI ---
-def ajustar_pesos_direccional(
-    isines_ordenados, pesos_dict, isin_modificado, pesos_previos
-):
+def ajustar_pesos_direccional(isines_ordenados, pesos_dict, isin_modificado, pesos_previos):
     """
-    Ajusta los pesos del resto de activos. AHORA NO DEVUELVE NADA,
-    solo modifica el diccionario de pesos que se le pasa.
+    Ajusta los pesos del resto de activos.
     """
     if not isines_ordenados or len(isines_ordenados) <= 1:
-        # No hacemos nada si no hay otros fondos que ajustar
+        return
+    
+    # Asegurarse de que el isin modificado está en la lista para evitar errores
+    if isin_modificado not in isines_ordenados:
         return
 
     index_modificado = isines_ordenados.index(isin_modificado)
     delta = pesos_dict[isin_modificado] - pesos_previos.get(isin_modificado, 0)
-    isines_para_ajustar = isines_ordenados[index_modificado + 1 :]
+    isines_para_ajustar = isines_ordenados[index_modificado + 1:]
     if not isines_para_ajustar:
         isines_para_ajustar = isines_ordenados[:index_modificado]
     if not isines_para_ajustar:
         return
-
-    # (El resto de la lógica interna de la función no cambia)
-    isines_ajustables = [
-        i
-        for i in isines_para_ajustar
-        if (delta > 0 and pesos_dict[i] > 0) or (delta < 0 and pesos_dict[i] < 100)
-    ]
+    
+    isines_ajustables = [i for i in isines_para_ajustar if (delta > 0 and pesos_dict[i] > 0) or (delta < 0 and pesos_dict[i] < 100)]
     if not isines_ajustables:
         isines_ajustables = [i for i in isines_ordenados if i != isin_modificado]
-        if not isines_ajustables:
-            return
+        if not isines_ajustables: return
+        
     suma_ajustable = sum(pesos_dict[i] for i in isines_ajustables)
     for isin in isines_ajustables:
-        ratio = (
-            pesos_dict[isin] / suma_ajustable
-            if suma_ajustable > 0
-            else 1 / len(isines_ajustables)
-        )
+        ratio = pesos_dict[isin] / suma_ajustable if suma_ajustable > 0 else 1 / len(isines_ajustables)
         pesos_dict[isin] -= delta * ratio
     for isin in isines_ajustables:
         pesos_dict[isin] = max(0, min(100, int(round(pesos_dict[isin]))))
     suma_actual = sum(pesos_dict.values())
     if suma_actual != 100 and isines_ajustables:
         pesos_dict[isines_ajustables[0]] += 100 - suma_actual
-    # La función ahora termina aquí, sin un 'return'.
-
-
-# En src/ui_components.py
-
-# ... (Las importaciones y la función ajustar_pesos_direccional no cambian) ...
-
 
 def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
     """
     Renderiza la barra lateral. Versión final con la lógica de ordenación
-    de fondos por peso corregida.
+    y el UnboundLocalError corregidos.
     """
     with st.sidebar:
         st.header("Configuración del Análisis")
-        horizonte = st.selectbox(
-            "Horizonte temporal",
-            ["3m", "6m", "YTD", "1y", "3y", "5y", "max"],
-            key="horizonte",
-        )
+        horizonte = st.selectbox("Horizonte temporal", ["3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
         st.markdown("---")
-
         st.header("🗂️ Gestor de Carteras")
+        
         lista_carteras = list(st.session_state.carteras.keys())
         st.selectbox("Cartera Activa", lista_carteras, key="cartera_activa")
 
-        # ... (La lógica de "Opciones de Gestión" para crear/borrar no cambia) ...
         with st.expander("Opciones de Gestión"):
             with st.form("form_create_portfolio"):
                 new_portfolio_name = st.text_input("Nombre de la nueva cartera")
@@ -91,144 +69,84 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
                         st.rerun()
 
             if st.session_state.cartera_activa:
-                if st.button(
-                    f"🗑️ Borrar '{st.session_state.cartera_activa}'", type="primary"
-                ):
+                if st.button(f"🗑️ Borrar '{st.session_state.cartera_activa}'", type="primary"):
                     del st.session_state.carteras[st.session_state.cartera_activa]
-                    st.session_state.cartera_activa = next(
-                        iter(st.session_state.carteras), None
-                    )
+                    st.session_state.cartera_activa = next(iter(st.session_state.carteras), None)
                     st.rerun()
-
+        
         st.markdown("---")
 
-        # --- LÓGICA DE COMPOSICIÓN CORREGIDA ---
+        # Inicializamos las variables de retorno con valores por defecto
         run_optimization = False
         modelo_optimización = None
         risk_measure = None
 
         if st.session_state.cartera_activa:
             st.header(f"💼 Composición de '{st.session_state.cartera_activa}'")
-
-            pesos_actuales = st.session_state.carteras[st.session_state.cartera_activa][
-                "pesos"
-            ]
+            
+            pesos_actuales = st.session_state.carteras[st.session_state.cartera_activa]['pesos']
             pesos_previos = pesos_actuales.copy()
+            
+            isines_ordenados = sorted(pesos_actuales.keys(), key=lambda isin: pesos_actuales.get(isin, 0), reverse=True)
 
-            # 1. Ordenamos los ISINs por su peso actual de mayor a menor
-            isines_ordenados = sorted(
-                pesos_actuales.keys(),
-                key=lambda isin: pesos_actuales.get(isin, 0),
-                reverse=True,
-            )
-
-            # Lógica para añadir fondos del catálogo
-            candidatos = [
-                n
-                for n in mapa_nombre_isin.keys()
-                if mapa_nombre_isin[n] not in isines_ordenados
-            ]
-            add_sel = st.selectbox(
-                "Añadir fondo a la cartera",
-                ["—"] + candidatos,
-                index=0,
-                key=f"add_fund_{st.session_state.cartera_activa}",
-            )
+            candidatos = [n for n in mapa_nombre_isin.keys() if mapa_nombre_isin[n] not in isines_ordenados]
+            add_sel = st.selectbox("Añadir fondo a la cartera", ["—"] + candidatos, index=0, key=f"add_fund_{st.session_state.cartera_activa}")
             if add_sel != "—" and st.button("➕ Añadir"):
                 nuevo_isin = mapa_nombre_isin[add_sel]
                 pesos_actuales[nuevo_isin] = 0
                 st.rerun()
 
-            # 2. Iteramos sobre la LISTA ORDENADA para dibujar los componentes
             for isin in isines_ordenados:
-                col_name, col_minus, col_slider, col_plus, col_del = st.columns(
-                    [4, 1, 4, 1, 1]
-                )
-                # ... (la lógica interna de los botones y slider no cambia) ...
+                col_name, col_minus, col_slider, col_plus, col_del = st.columns([4, 1, 4, 1, 1])
                 with col_name:
                     st.markdown(f"**{mapa_isin_nombre.get(isin, isin)}**")
                 with col_minus:
-                    if st.button(
-                        "➖", key=f"minus_{st.session_state.cartera_activa}_{isin}"
-                    ):
-                        if pesos_actuales[isin] > 0:
-                            pesos_actuales[isin] -= 1
+                    if st.button("➖", key=f"minus_{st.session_state.cartera_activa}_{isin}"):
+                        if pesos_actuales[isin] > 0: pesos_actuales[isin] -= 1
                 with col_slider:
-                    pesos_actuales[isin] = st.slider(
-                        "Peso %",
-                        0,
-                        100,
-                        pesos_actuales.get(isin, 0),
-                        1,
-                        key=f"peso_{st.session_state.cartera_activa}_{isin}",
-                        label_visibility="collapsed",
-                    )
+                    pesos_actuales[isin] = st.slider("Peso %", 0, 100, pesos_actuales.get(isin, 0), 1, key=f"peso_{st.session_state.cartera_activa}_{isin}", label_visibility="collapsed")
                 with col_plus:
-                    if st.button(
-                        "➕", key=f"plus_{st.session_state.cartera_activa}_{isin}"
-                    ):
-                        if pesos_actuales[isin] < 100:
-                            pesos_actuales[isin] += 1
+                    if st.button("➕", key=f"plus_{st.session_state.cartera_activa}_{isin}"):
+                        if pesos_actuales[isin] < 100: pesos_actuales[isin] += 1
                 with col_del:
-                    if st.button(
-                        "🗑️", key=f"remove_{st.session_state.cartera_activa}_{isin}"
-                    ):
+                    if st.button("🗑️", key=f"remove_{st.session_state.cartera_activa}_{isin}"):
                         del pesos_actuales[isin]
                         st.rerun()
 
-            # 3. Detectamos si hubo algún cambio para reajustar
             isin_modificado = None
             for isin, peso in pesos_actuales.items():
                 if peso != pesos_previos.get(isin, 0):
                     isin_modificado = isin
                     break
-
+            
             if isin_modificado:
-                # 4. Usamos la misma LISTA ORDENADA para el reajuste
                 ajustar_pesos_direccional(
                     isines_ordenados, pesos_actuales, isin_modificado, pesos_previos
                 )
                 st.rerun()
-
+            
             if pesos_actuales:
                 st.metric("Suma Total", f"{sum(pesos_actuales.values())}%")
 
-            # ... (La lógica de optimización no cambia) ...
             st.markdown("---")
             st.subheader("⚖️ Optimización")
             modelo_optimización = st.selectbox(
-                "Selecciona un modelo",
-                ["HRP", "MV", "MSR"],
-                format_func=lambda x: {
-                    "HRP": "Hierarchical Risk Parity",
-                    "MV": "Mínima Volatilidad",
-                    "MSR": "Máximo Ratio de Sharpe",
-                }[x],
-                key=f"model_{st.session_state.cartera_activa}",
+                "Selecciona un modelo", ["HRP", "MV", "MSR"],
+                format_func=lambda x: {"HRP": "Hierarchical Risk Parity", "MV": "Mínima Volatilidad", "MSR": "Máximo Ratio de Sharpe"}[x],
+                key=f"model_{st.session_state.cartera_activa}"
             )
-            risk_measure = "MV"
-            if modelo_optimización == "HRP":
-                rms_disponibles = ["MV", "MAD", "MSV", "VaR", "CVaR", "CDaR"]
-                rms_nombres = {
-                    "MV": "Varianza",
-                    "MAD": "Desviación Absoluta",
-                    "MSV": "Semi Varianza",
-                    "VaR": "Valor en Riesgo",
-                    "CVaR": "VaR Condicional",
-                    "CDaR": "Drawdown Condicional",
-                }
-                risk_measure = st.selectbox(
-                    "Medida de Riesgo (para HRP)",
-                    rms_disponibles,
-                    format_func=lambda x: rms_nombres.get(x, x),
-                    key=f"rm_{st.session_state.cartera_activa}",
-                )
-
+            risk_measure = 'MV'
+            if modelo_optimización == 'HRP':
+                rms_disponibles = ['MV', 'MAD', 'MSV', 'VaR', 'CVaR', 'CDaR']
+                rms_nombres = {'MV': 'Varianza', 'MAD': 'Desviación Absoluta', 'MSV': 'Semi Varianza', 'VaR': 'Valor en Riesgo', 'CVaR': 'VaR Condicional', 'CDaR': 'Drawdown Condicional'}
+                risk_measure = st.selectbox("Medida de Riesgo (para HRP)", rms_disponibles, format_func=lambda x: rms_nombres.get(x, x), key=f"rm_{st.session_state.cartera_activa}")
+            
             run_optimization = st.button("🚀 Optimizar Cartera")
         else:
             st.warning("Crea o selecciona una cartera para continuar.")
-
+        
     return horizonte, run_optimization, modelo_optimización, risk_measure
+
 
 
 def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
