@@ -3,11 +3,13 @@
 import pandas as pd
 from .metrics import calcular_metricas_desde_rentabilidades
 
+
 class Portfolio:
     """
     Representa una cartera de activos con pesos específicos.
     Espera un DataFrame de NAVs y un diccionario de pesos.
     """
+
     def __init__(self, nav_data: pd.DataFrame, weights: dict):
         # Normalizar pesos para que sumen 1
         total_weight = sum(weights.values())
@@ -26,12 +28,12 @@ class Portfolio:
         """Calcula los retornos diarios ponderados de la cartera."""
         if self.weights.empty or self.navs.empty:
             return None
-        
+
         asset_returns = self.navs.pct_change().dropna()
-        
+
         # Alinear columnas antes de la multiplicación
         aligned_weights = self.weights.reindex(asset_returns.columns).fillna(0)
-        
+
         portfolio_returns = asset_returns.mul(aligned_weights, axis=1).sum(axis=1)
         return portfolio_returns
 
@@ -41,7 +43,7 @@ class Portfolio:
         returns = self.daily_returns
         if returns is None:
             return None
-        
+
         # Normaliza el NAV para empezar en 100
         return (1 + returns).cumprod() * 100
 
