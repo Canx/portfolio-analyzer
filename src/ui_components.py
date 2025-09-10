@@ -7,72 +7,24 @@ from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
 
-# --- HELPERS DE UI ---
-def ajustar_pesos_direccional(isines_ordenados, pesos_dict, isin_modificado, pesos_previos):
-    """
-    Ajusta los pesos del resto de activos.
-    """
-    if not isines_ordenados or len(isines_ordenados) <= 1:
-        return
-    
-    # Asegurarse de que el isin modificado está en la lista para evitar errores
-    if isin_modificado not in isines_ordenados:
-        return
-
-    index_modificado = isines_ordenados.index(isin_modificado)
-    delta = pesos_dict[isin_modificado] - pesos_previos.get(isin_modificado, 0)
-    isines_para_ajustar = isines_ordenados[index_modificado + 1:]
-    if not isines_para_ajustar:
-        isines_para_ajustar = isines_ordenados[:index_modificado]
-    if not isines_para_ajustar:
-        return
-    
-    isines_ajustables = [i for i in isines_para_ajustar if (delta > 0 and pesos_dict[i] > 0) or (delta < 0 and pesos_dict[i] < 100)]
-    if not isines_ajustables:
-        isines_ajustables = [i for i in isines_ordenados if i != isin_modificado]
-        if not isines_ajustables: return
-        
-    suma_ajustable = sum(pesos_dict[i] for i in isines_ajustables)
-    for isin in isines_ajustables:
-        ratio = pesos_dict[isin] / suma_ajustable if suma_ajustable > 0 else 1 / len(isines_ajustables)
-        pesos_dict[isin] -= delta * ratio
-    for isin in isines_ajustables:
-        pesos_dict[isin] = max(0, min(100, int(round(pesos_dict[isin]))))
-    suma_actual = sum(pesos_dict.values())
-    if suma_actual != 100 and isines_ajustables:
-        pesos_dict[isines_ajustables[0]] += 100 - suma_actual
-
-# En src/ui_components.py
-
-# ... (Las importaciones y la función ajustar_pesos_direccional no cambian) ...
 
 def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
     """
-    Renderiza la barra lateral. Corregido el StreamlitAPIException al crear carteras.
+    Renderiza la barra lateral.
+    Reintroduce la lógica para añadir fondos a la cartera.
     """
     with st.sidebar:
         st.header("Configuración del Análisis")
-        horizonte = st.selectbox("Horizonte temporal", ["1m", "3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
+        horizonte = st.selectbox("Horizonte temporal", ["3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
         st.markdown("---")
-
         st.header("🗂️ Gestor de Carteras")
-        lista_carteras = list(st.session_state.carteras.keys())
         
-        # --- LÓGICA DEL SELECTBOX MODIFICADA ---
-        # Guardamos el índice actual para que el desplegable no se "resete" visualmente
-        try:
-            indice_actual = lista_carteras.index(st.session_state.cartera_activa)
-        except (ValueError, AttributeError):
-            indice_actual = 0
-            
-        # Quitamos el argumento 'key' y gestionamos el cambio manualmente
+        lista_carteras = list(st.session_state.carteras.keys())
         cartera_seleccionada = st.selectbox(
             "Cartera Activa",
             lista_carteras,
-            index=indice_actual
+            index=lista_carteras.index(st.session_state.cartera_activa) if st.session_state.cartera_activa in lista_carteras else 0
         )
-        
-        # Si el usuario cambia la selección, actualizamos el estado y recargamos
         if cartera_seleccionada != st.session_state.cartera_activa:
             st.session_state.cartera_activa = cartera_seleccionada
             st.rerun()
@@ -86,7 +38,6 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
                         st.warning("Ya existe una cartera con ese nombre.")
                     else:
                         st.session_state.carteras[new_portfolio_name] = {"pesos": {}}
-                        # Ahora este cambio es seguro porque el selectbox no tiene el control exclusivo
                         st.session_state.cartera_activa = new_portfolio_name
                         st.rerun()
 
@@ -98,24 +49,28 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
         
         st.markdown("---")
 
-        # ... (El resto de la función sigue exactamente igual) ...
         run_optimization = False
         modelo_optimización = None
         risk_measure = None
+
         if st.session_state.cartera_activa:
             st.header(f"💼 Composición de '{st.session_state.cartera_activa}'")
             
             pesos_actuales = st.session_state.carteras[st.session_state.cartera_activa]['pesos']
-            pesos_previos = pesos_actuales.copy()
             
-            isines_ordenados = sorted(pesos_actuales.keys(), key=lambda isin: pesos_actuales.get(isin, 0), reverse=True)
-
-            candidatos = [n for n in mapa_nombre_isin.keys() if mapa_nombre_isin[n] not in isines_ordenados]
+            # --- CÓDIGO REINTRODUCIDO ---
+            cartera_actual_isines = pesos_actuales.keys()
+            candidatos = [n for n in mapa_nombre_isin.keys() if mapa_nombre_isin[n] not in cartera_actual_isines]
             add_sel = st.selectbox("Añadir fondo a la cartera", ["—"] + candidatos, index=0, key=f"add_fund_{st.session_state.cartera_activa}")
+
             if add_sel != "—" and st.button("➕ Añadir"):
                 nuevo_isin = mapa_nombre_isin[add_sel]
-                pesos_actuales[nuevo_isin] = 0
+                pesos_actuales[nuevo_isin] = 0 # Lo añadimos con peso 0
                 st.rerun()
+            # --- FIN DEL CÓDIGO REINTRODUCIDO ---
+
+            pesos_previos = pesos_actuales.copy()
+            isines_ordenados = sorted(pesos_actuales.keys(), key=lambda isin: pesos_actuales.get(isin, 0), reverse=True)
 
             for isin in isines_ordenados:
                 col_name, col_minus, col_slider, col_plus, col_del = st.columns([4, 1, 4, 1, 1])
@@ -141,13 +96,15 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
                     break
             
             if isin_modificado:
-                ajustar_pesos_direccional(
-                    isines_ordenados, pesos_actuales, isin_modificado, pesos_previos
-                )
-                st.rerun()
+                # La función de ajuste se elimina, ya que no se usa
+                # ajustar_pesos_direccional(...)
+                pass # Ya no hay reajuste automático
             
             if pesos_actuales:
-                st.metric("Suma Total", f"{sum(pesos_actuales.values())}%")
+                total_peso = sum(pesos_actuales.values())
+                st.metric("Suma Total", f"{total_peso}%")
+                if total_peso != 100:
+                    st.error(f"⚠️ La suma de los pesos debe ser 100%. Actualmente es {total_peso}%.")
 
             st.markdown("---")
             st.subheader("⚖️ Optimización")
@@ -167,7 +124,6 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
             st.warning("Crea o selecciona una cartera para continuar.")
         
     return horizonte, run_optimization, modelo_optimización, risk_measure
-
 
 
 def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
@@ -316,6 +272,29 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
                 yaxis_title="Rentabilidad Anualizada (%)",
             )
             st.plotly_chart(fig_risk, use_container_width=True)
+
+        # --- BLOQUE DE CÓDIGO REINTRODUCIDO ---
+        # Gráfico de Correlaciones
+        cartera_activa_nombre = st.session_state.get("cartera_activa")
+        if cartera_activa_nombre:
+            cartera_activa_isines = list(st.session_state.carteras.get(cartera_activa_nombre, {}).get("pesos", {}).keys())
+            
+            if len(cartera_activa_isines) > 1:
+                st.subheader("🔗 Correlación de la Cartera")
+                
+                # Nos aseguramos de que solo usamos las columnas que existen en daily_returns
+                returns_cartera = daily_returns[[isin for isin in cartera_activa_isines if isin in daily_returns.columns]]
+                
+                corr_matrix = returns_cartera.corr()
+                
+                # Renombramos para que sea legible
+                corr_matrix.columns = [mapa_isin_nombre.get(c, c) for c in corr_matrix.columns]
+                corr_matrix.index = [mapa_isin_nombre.get(i, i) for i in corr_matrix.index]
+                
+                fig_corr = px.imshow(corr_matrix, text_auto=True, aspect="auto",
+                                       color_continuous_scale='RdBu_r', range_color=[-1, 1],
+                                       title="Matriz de Correlación de la Cartera Activa")
+                st.plotly_chart(fig_corr, use_container_width=True)
 
 
 def render_update_panel(isines, mapa_isin_nombre):
