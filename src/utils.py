@@ -4,6 +4,8 @@ import streamlit as st
 import pandas as pd
 import json
 from pathlib import Path
+import time   # <-- Importamos la librería time
+import random # <-- Importamos la librería random
 
 # Estas funciones ahora vivirán aquí y serán importadas por las páginas que las necesiten.
 
@@ -20,14 +22,23 @@ def load_config(config_file="fondos.json"):
 
 @st.cache_data
 def load_all_navs(_data_manager, isines: tuple, force_update_isin: str = None):
-    """Función centralizada y cacheada para cargar todos los datos NAV."""
+    """
+    Función centralizada para cargar datos NAV.
+    AÑADE UNA PAUSA ALEATORIA entre cada petición para evitar bloqueos.
+    """
     with st.spinner(f"Cargando datos de {len(isines)} fondos..."):
         all_navs = {}
-        for isin in isines:
-            force = isin == force_update_isin
+        for i, isin in enumerate(isines):
+            # --- LÓGICA AÑADIDA ---
+            # Si no es la primera petición, hacemos una pausa
+            if i > 0:
+                # Esperamos entre 1 y 3 segundos para parecer más humanos
+                pausa = random.uniform(1, 3)
+                time.sleep(pausa)
+
+            force = (isin == force_update_isin)
             df = _data_manager.get_fund_nav(isin, force_to_today=force)
-            if df is not None and "nav" in df.columns:
-                all_navs[isin] = df["nav"]
-    if not all_navs:
-        return pd.DataFrame()
+            if df is not None and 'nav' in df.columns:
+                all_navs[isin] = df['nav']
+    if not all_navs: return pd.DataFrame()
     return pd.concat(all_navs, axis=1).ffill()
