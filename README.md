@@ -89,36 +89,6 @@ La aplicación se abrirá automáticamente en tu navegador. La primera vez que s
 
 -----
 
-## 📂 Estructura del Proyecto
-
-La aplicación ha sido refactorizada para seguir una arquitectura modular y multi-página:
-
-```
-analizador-carteras/
-├── app.py                      # Página principal de bienvenida
-├── pages/
-│   ├── 1_📈_Análisis_de_Cartera.py # Lógica y UI para la página de análisis
-│   └── 2_🔎_Explorador_de_Fondos.py # Lógica y UI para el explorador del catálogo
-│   └── 3_📊_Comparador_de_Carteras.py # Lógica y UI para comparar carteras
-├── src/
-│   ├── data_manager.py         # Gestiona la descarga de datos y el catálogo fondos.json
-│   ├── metrics.py              # Funciones de cálculo de métricas financieras
-│   ├── optimizer.py            # Lógica de optimización con Riskfolio-Lib
-│   ├── portfolio.py            # Clase que modela una cartera agregada
-│   ├── state.py                # Inicialización del estado de la sesión
-│   ├── ui_components.py        # Funciones que construyen la interfaz
-│   └── utils.py                # Funciones de utilidad compartidas (carga de config, etc.)
-├── tests/
-│   ├── test_metrics.py         # Tests unitarios para las funciones de métricas
-│   └── test_portfolio.py       # Tests unitarios para la clase Portfolio
-├── fondos.json                 # Fichero de configuración con el catálogo de fondos
-├── fondos_data/                # Caché de datos de precios (CSVs)
-├── requirements.txt            # Dependencias de Python
-└── README.md                   # Este fichero
-```
-
------
-
 ## 💡 Posibles Mejoras Futuras
 
   * **Backtesting Histórico:** Añadir una nueva página para simular el rendimiento de una estrategia de cartera a lo largo de periodos históricos más largos.
