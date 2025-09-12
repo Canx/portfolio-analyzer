@@ -27,4 +27,5 @@ def initialize_session_state():
         else:
             st.session_state.cartera_activa = None
 
+        st.session_state.total_investment_amount = 10000
         st.session_state.initialized = True
