@@ -6,6 +6,8 @@ from pathlib import Path
 from datetime import date, timedelta
 import streamlit as st
 import json
+import time
+import random
 
 
 # En src/data_manager.py
@@ -19,11 +21,16 @@ class DataManager:
         self.data_dir.mkdir(exist_ok=True)
         self.today = date.today()
         self.recency_threshold_days = 5
+        self.api_call_made_in_this_run = False
 
     def _download_nav(self, isin: str, start_date: date, end_date: date) -> pd.DataFrame | None:
         """Descarga datos de Morningstar para un ISIN y un rango de fechas."""
-        # --- MENSAJE ELIMINADO ---
-        # st.sidebar.info(f"🌐 Llamando a la API para {isin}...")
+        # --- LÓGICA DE PAUSA INTELIGENTE ---
+        # Si ya hemos hecho una llamada a la API en esta ejecución, esperamos.
+        if self.api_call_made_in_this_run:
+            pausa = random.uniform(1, 3)
+            time.sleep(pausa)
+
         try:
             fund = ms.Funds(isin)
             nav_data = pd.DataFrame(fund.nav(start_date=start_date, end_date=end_date))
@@ -32,6 +39,7 @@ class DataManager:
             if nav_col is None: return None
             df = nav_data.rename(columns={nav_col: "nav"})[["date", "nav"]]
             df["date"] = pd.to_datetime(df["date"])
+            self.api_call_made_in_this_run = True
             return df.sort_values("date").drop_duplicates(subset="date")
         except Exception as e:
             st.error(f"Error descargando {isin}: {e}")

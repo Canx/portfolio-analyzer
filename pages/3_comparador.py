@@ -93,7 +93,8 @@ for nombre_cartera in carteras_seleccionadas:
     todos_los_isines.update(pesos.keys())
 
 data_manager = DataManager()
-all_navs_df = load_all_navs(data_manager, tuple(sorted(todos_los_isines)))
+with st.spinner(f"Cargando datos de precios para {len(todos_los_isines)} fondos seleccionados..."):
+    all_navs_df = load_all_navs(data_manager, tuple(sorted(todos_los_isines)))
 
 if all_navs_df.empty:
     st.error("No se pudieron cargar los datos de los fondos para la comparación."); st.stop()

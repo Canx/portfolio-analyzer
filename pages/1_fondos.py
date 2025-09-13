@@ -78,7 +78,8 @@ search_term = st.sidebar.text_input("Buscar por nombre")
 # --- CÁLCULO DE MÉTRICAS ---
 data_manager = DataManager()
 isines_catalogo = tuple(df_catalogo['isin'].unique())
-all_navs_df = load_all_navs(data_manager, isines_catalogo)
+with st.spinner(f"Cargando datos de precios para {len(isines_catalogo)} fondos..."):
+    all_navs_df = load_all_navs(data_manager, isines_catalogo)
 
 df_metrics_calculadas = pd.DataFrame()
 if not all_navs_df.empty:

@@ -69,9 +69,10 @@ if not isines_a_cargar:
 
 # 5. CARGA DE DATOS Y PROCESADO
 force_update_isin = st.session_state.pop("force_update_isin", None)
-all_navs_df = load_all_navs(
-    data_manager, isines_a_cargar, force_update_isin=force_update_isin
-)
+with st.spinner(f"Cargando datos de precios para {len(isines_a_cargar)} fondos en la cartera..."):
+    all_navs_df = load_all_navs(
+        data_manager, isines_a_cargar, force_update_isin=force_update_isin
+    )
 if all_navs_df.empty:
     st.stop()
 
