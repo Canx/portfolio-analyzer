@@ -32,7 +32,7 @@ mapa_nombre_isin = {f"{f['nombre']} ({f['isin']})": f['isin'] for f in fondos_co
 nombres_fondos_catalogo = list(mapa_nombre_isin.keys())
 lista_carteras = list(st.session_state.carteras.keys())
 
-# --- LÓGICA DE CARGA DE LA ÚLTIMA COMPARACIÓN ---
+# --- Lógica de Carga de la última comparación ---
 default_carteras = []
 default_fondos_nombres = []
 saved_comp_json = localS.getItem('saved_comparison')
@@ -47,7 +47,7 @@ if saved_comp_json:
         # Si hay un error en los datos guardados, empezamos de cero
         pass
 
-# --- Selectores con valores por defecto cargados ---
+# --- Selectores ---
 col1, col2 = st.columns(2)
 with col1:
     carteras_seleccionadas = st.multiselect(
@@ -62,7 +62,8 @@ with col2:
         default=default_fondos_nombres # Usamos el valor cargado
     )
 
-# --- LÓGICA DE GUARDADO DE LA NUEVA COMPARACIÓN ---
+
+# --- Lógica de Guardado de la nueva comparación ---
 fondos_seleccionados_isines = [mapa_nombre_isin[n] for n in fondos_seleccionados_nombres]
 current_comp = {
     "carteras": carteras_seleccionadas,
@@ -82,9 +83,10 @@ horizonte = st.sidebar.selectbox(
             index=HORIZONTE_DEFAULT_INDEX,
             key="horizonte"
         )
+
 st.markdown("---")
 
-# --- Lógica de Carga Adaptada ---
+# --- Carga y Procesamiento de Datos ---
 todos_los_isines = set(fondos_seleccionados_isines)
 for nombre_cartera in carteras_seleccionadas:
     pesos = st.session_state.carteras.get(nombre_cartera, {}).get("pesos", {})
@@ -98,30 +100,34 @@ if all_navs_df.empty:
 
 filtered_navs = filtrar_por_horizonte(all_navs_df, horizonte)
 
-# --- Bucle de Cálculo Modificado ---
+# --- Bucle de Cálculo ---
 lista_metricas = []
 navs_a_graficar = {}
+returns_a_correlacionar = {} # <-- NUEVO: Diccionario para guardar las rentabilidades
 
 # 1. Procesar las carteras compuestas
 for nombre_cartera in carteras_seleccionadas:
     pesos = st.session_state.carteras[nombre_cartera].get("pesos", {})
     portfolio_obj = Portfolio(nav_data=filtered_navs, weights=pesos)
+    nombre_display = f"💼 {nombre_cartera}"
     if portfolio_obj.daily_returns is not None and len(portfolio_obj.daily_returns.dropna()) > 1:
-        metricas = portfolio_obj.calculate_metrics(); metricas["nombre"] = f"💼 {nombre_cartera}"
+        metricas = portfolio_obj.calculate_metrics(); metricas["nombre"] = nombre_display
         lista_metricas.append(metricas)
+        returns_a_correlacionar[nombre_display] = portfolio_obj.daily_returns # <-- Guardamos rentabilidades
     if portfolio_obj.nav is not None:
-        navs_a_graficar[f"💼 {nombre_cartera}"] = portfolio_obj.nav
+        navs_a_graficar[nombre_display] = portfolio_obj.nav
 
-# 2. Procesar los fondos individuales (tratándolos como carteras de un solo activo)
+# 2. Procesar los fondos individuales
 for isin in fondos_seleccionados_isines:
-    pesos = {isin: 100} # Cartera con 100% de peso en este único fondo
+    pesos = {isin: 100}
     portfolio_obj = Portfolio(nav_data=filtered_navs, weights=pesos)
-    nombre_fondo = mapa_isin_nombre.get(isin, isin)
+    nombre_display = mapa_isin_nombre.get(isin, isin)
     if portfolio_obj.daily_returns is not None and len(portfolio_obj.daily_returns.dropna()) > 1:
-        metricas = portfolio_obj.calculate_metrics(); metricas["nombre"] = nombre_fondo
+        metricas = portfolio_obj.calculate_metrics(); metricas["nombre"] = nombre_display
         lista_metricas.append(metricas)
+        returns_a_correlacionar[nombre_display] = portfolio_obj.daily_returns # <-- Guardamos rentabilidades
     if portfolio_obj.nav is not None:
-        navs_a_graficar[nombre_fondo] = portfolio_obj.nav
+        navs_a_graficar[nombre_display] = portfolio_obj.nav
 
 # --- Visualización de Resultados ---
 if lista_metricas:
@@ -151,3 +157,25 @@ if navs_a_graficar:
         title=f"Rendimiento Comparado ({horizonte})"
     )
     st.plotly_chart(fig, use_container_width=True)
+
+# --- NUEVO: Gráfico de Matriz de Correlación ---
+if len(returns_a_correlacionar) > 1:
+    st.markdown("---")
+    st.subheader("🔗 Matriz de Correlación")
+    
+    # Combinamos todas las series de rentabilidades en un único DataFrame
+    df_corr = pd.DataFrame(returns_a_correlacionar)
+    
+    # Calculamos la matriz de correlación
+    corr_matrix = df_corr.corr()
+
+    # Creamos el gráfico de calor
+    fig_corr = px.imshow(
+        corr_matrix,
+        text_auto=True,
+        aspect="auto",
+        color_continuous_scale='RdBu_r', # Paleta de color rojo/azul
+        range_color=[-1, 1],             # Rango de -1 (rojo) a 1 (azul)
+        title="Correlación entre los Activos Seleccionados"
+    )
+    st.plotly_chart(fig_corr, use_container_width=True)
