@@ -7,6 +7,7 @@ from src.state import initialize_session_state
 from src.utils import load_config, load_all_navs
 from src.data_manager import DataManager, filtrar_por_horizonte
 from src.portfolio import Portfolio
+from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
 
 st.set_page_config(
     page_title="Comparador",
@@ -50,7 +51,12 @@ if not carteras_seleccionadas and not fondos_seleccionados_isines:
     st.stop()
 
 # --- Selector de Horizonte en la Sidebar ---
-horizonte = st.sidebar.selectbox("Horizonte temporal para la comparación", ["3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="comp_horizonte")
+horizonte = st.sidebar.selectbox(
+            "Horizonte temporal",
+            HORIZONTE_OPCIONES,
+            index=HORIZONTE_DEFAULT_INDEX,
+            key="horizonte"
+        )
 st.markdown("---")
 
 # --- Lógica de Carga Adaptada ---

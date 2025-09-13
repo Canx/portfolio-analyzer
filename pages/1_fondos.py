@@ -9,6 +9,7 @@ from src.utils import load_config, load_all_navs
 from src.state import initialize_session_state
 from src.data_manager import find_and_add_fund_by_isin, update_fund_details_in_config, DataManager, filtrar_por_horizonte
 from src.metrics import calcular_metricas_desde_rentabilidades
+from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
 
 st.set_page_config(
     page_title="Explorador de Fondos",
@@ -44,11 +45,12 @@ df_catalogo['ter'] = pd.to_numeric(df_catalogo['ter'], errors='coerce')
 
 # --- Controles de Filtro en la Barra Lateral ---
 st.sidebar.header("Filtros del Explorador")
+
 horizonte = st.sidebar.selectbox(
-    "Horizonte temporal para el análisis",
-    ["1m", "3m", "6m", "YTD", "1y", "3y", "5y", "max"],
-    key="explorer_horizonte"
-)
+            "Horizonte temporal",
+            HORIZONTE_OPCIONES,
+            index=HORIZONTE_DEFAULT_INDEX,
+            key="horizonte")
 
 if 'gestora' in df_catalogo.columns:
     gestoras = sorted(df_catalogo["gestora"].dropna().unique())

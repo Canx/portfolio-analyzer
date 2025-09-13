@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
+from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
 
 
 def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
@@ -15,7 +16,13 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
     """
     with st.sidebar:
         st.header("Configuración del Análisis")
-        horizonte = st.selectbox("Horizonte temporal", ["3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
+        horizonte = st.selectbox(
+            "Horizonte temporal",
+            HORIZONTE_OPCIONES,
+            index=HORIZONTE_DEFAULT_INDEX,
+            key="horizonte"
+        )
+
         st.markdown("---")
 
         st.header("🗂️ Gestor de Carteras")
