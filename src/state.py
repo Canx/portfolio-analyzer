@@ -28,4 +28,6 @@ def initialize_session_state():
             st.session_state.cartera_activa = None
 
         st.session_state.total_investment_amount = 10000
+        # Para la selección en el explorador de fondos
+        st.session_state.explorer_selection = []
         st.session_state.initialized = True

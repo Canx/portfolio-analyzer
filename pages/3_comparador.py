@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import json
+from streamlit_local_storage import LocalStorage
 
 # Importaciones de funciones compartidas
 from src.state import initialize_session_state
@@ -10,11 +12,12 @@ from src.portfolio import Portfolio
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
 
 st.set_page_config(
-    page_title="Comparador",
+    page_title="Comparador de Carteras",
     page_icon="📊",
     layout="wide"
 )
 initialize_session_state()
+localS = LocalStorage()
 
 st.title("📊 Comparador de Carteras y Fondos")
 st.write("Selecciona carteras y/o fondos individuales para comparar su rendimiento y métricas.")
@@ -22,29 +25,51 @@ st.write("Selecciona carteras y/o fondos individuales para comparar su rendimien
 # --- Carga de datos de configuración ---
 fondos_config = load_config()
 if not fondos_config:
-    st.warning("No hay fondos en el catálogo. Por favor, añádelos en el Explorador de Fondos.")
-    st.stop()
+    st.warning("No hay fondos en el catálogo."); st.stop()
 
 mapa_isin_nombre = {f['isin']: f['nombre'] for f in fondos_config}
 mapa_nombre_isin = {f"{f['nombre']} ({f['isin']})": f['isin'] for f in fondos_config}
 nombres_fondos_catalogo = list(mapa_nombre_isin.keys())
-
-# --- Selectores de Carteras y Fondos ---
 lista_carteras = list(st.session_state.carteras.keys())
 
+# --- LÓGICA DE CARGA DE LA ÚLTIMA COMPARACIÓN ---
+default_carteras = []
+default_fondos_nombres = []
+saved_comp_json = localS.getItem('saved_comparison')
+if saved_comp_json:
+    try:
+        saved_comp = json.loads(saved_comp_json)
+        # Nos aseguramos de que las carteras y fondos guardados todavía existen
+        default_carteras = [c for c in saved_comp.get('carteras', []) if c in lista_carteras]
+        saved_fondos_isines = saved_comp.get('fondos', [])
+        default_fondos_nombres = [name for name, isin in mapa_nombre_isin.items() if isin in saved_fondos_isines]
+    except (json.JSONDecodeError, TypeError):
+        # Si hay un error en los datos guardados, empezamos de cero
+        pass
+
+# --- Selectores con valores por defecto cargados ---
 col1, col2 = st.columns(2)
 with col1:
     carteras_seleccionadas = st.multiselect(
         "Selecciona Carteras",
         options=lista_carteras,
-        default=lista_carteras[:2] if len(lista_carteras) >= 2 else []
+        default=default_carteras # Usamos el valor cargado
     )
 with col2:
     fondos_seleccionados_nombres = st.multiselect(
         "Añadir Fondos Individuales a la Comparación",
-        options=nombres_fondos_catalogo
+        options=nombres_fondos_catalogo,
+        default=default_fondos_nombres # Usamos el valor cargado
     )
-    fondos_seleccionados_isines = [mapa_nombre_isin[n] for n in fondos_seleccionados_nombres]
+
+# --- LÓGICA DE GUARDADO DE LA NUEVA COMPARACIÓN ---
+fondos_seleccionados_isines = [mapa_nombre_isin[n] for n in fondos_seleccionados_nombres]
+current_comp = {
+    "carteras": carteras_seleccionadas,
+    "fondos": fondos_seleccionados_isines
+}
+localS.setItem('saved_comparison', json.dumps(current_comp))
+
 
 if not carteras_seleccionadas and not fondos_seleccionados_isines:
     st.info("Por favor, selecciona al menos una cartera o un fondo para iniciar la comparación.")
