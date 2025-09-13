@@ -1,15 +1,11 @@
-# src/utils.py
-
 import streamlit as st
 import pandas as pd
 import json
 from pathlib import Path
-import time   # <-- Importamos la librería time
-import random # <-- Importamos la librería random
+import time
+import random
 
-# Estas funciones ahora vivirán aquí y serán importadas por las páginas que las necesiten.
-
-
+# Esta función se mantiene igual
 @st.cache_data
 def load_config(config_file="fondos.json"):
     """Carga la configuración de fondos desde un JSON."""
@@ -20,25 +16,42 @@ def load_config(config_file="fondos.json"):
         return json.load(f).get("fondos", [])
 
 
+# --- NUEVA FUNCIÓN CACHEADA PARA UN SOLO FONDO ---
 @st.cache_data
+def load_single_fund_nav_cached(_data_manager, isin: str, force_update: bool = False):
+    """
+    Obtiene el NAV de un único fondo y cachea el resultado.
+    El guion bajo en _data_manager evita que Streamlit intente cachear el objeto.
+    """
+    return _data_manager.get_fund_nav(isin, force_to_today=force)
+
+
+# --- FUNCIÓN load_all_navs MODIFICADA (YA NO ESTÁ CACHEADA) ---
 def load_all_navs(_data_manager, isines: tuple, force_update_isin: str = None):
     """
-    Función centralizada para cargar datos NAV.
-    AÑADE UNA PAUSA ALEATORIA entre cada petición para evitar bloqueos.
+    Orquesta la carga de datos para múltiples ISINs, llamando a la
+    función cacheada para cada uno. Añade una pausa para evitar bloqueos.
     """
-    with st.spinner(f"Cargando datos de {len(isines)} fondos..."):
-        all_navs = {}
-        for i, isin in enumerate(isines):
-            # --- LÓGICA AÑADIDA ---
-            # Si no es la primera petición, hacemos una pausa
-            if i > 0:
-                # Esperamos entre 1 y 3 segundos para parecer más humanos
-                pausa = random.uniform(5, 10)
-                time.sleep(pausa)
+    all_navs = {}
+    
+    # El spinner ahora se muestra fuera, en la página que llama a la función si es necesario
+    # st.spinner(f"Cargando datos de {len(isines)} fondos...")
 
-            force = (isin == force_update_isin)
-            df = _data_manager.get_fund_nav(isin, force_to_today=force)
-            if df is not None and 'nav' in df.columns:
-                all_navs[isin] = df['nav']
-    if not all_navs: return pd.DataFrame()
+    for i, isin in enumerate(isines):
+        # La pausa se mantiene para las llamadas que SÍ van a la API
+        if i > 0:
+            pausa = random.uniform(1, 3)
+            time.sleep(pausa)
+
+        force = (isin == force_update_isin)
+        
+        # Llamamos a la nueva función cacheada individual
+        df = load_single_fund_nav_cached(_data_manager, isin, force_update=force)
+        
+        if df is not None and 'nav' in df.columns:
+            all_navs[isin] = df['nav']
+            
+    if not all_navs:
+        return pd.DataFrame()
+        
     return pd.concat(all_navs, axis=1).ffill()
