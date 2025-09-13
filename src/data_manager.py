@@ -96,29 +96,46 @@ def filtrar_por_horizonte(df: pd.DataFrame, horizonte: str) -> pd.DataFrame:
 
 
 # --- NUEVA FUNCIÓN HELPER PRIVADA ---
+# En src/data_manager.py
+
+@st.cache_data
 def _fetch_fund_metadata(isin: str) -> dict | None:
     """
-    Función centralizada para obtener los metadatos de un fondo desde la API.
-    Devuelve un diccionario con los datos o None si falla.
+    Función centralizada y optimizada para obtener los metadatos de un fondo.
+    Intenta obtener los datos de los atributos del objeto antes de hacer una
+    llamada adicional a .snapshot().
     """
     try:
         fund = ms.Funds(term=isin)
-        snapshot_data = fund.snapshot()
+        metadata = {}
 
-        if not snapshot_data:
-            st.warning(f"La API devolvió datos vacíos para {isin}.")
-            return None
+        # Intentamos obtener los datos directamente de los atributos del objeto 'fund'
+        metadata['isin'] = getattr(fund, 'isin', isin)
+        metadata['nombre'] = getattr(fund, 'name', 'Nombre no encontrado')
+        metadata['nombre_legal'] = getattr(fund, 'legalName', metadata['nombre'])
+        metadata['gestora'] = getattr(fund, 'brandingCompanyName', None)
+        metadata['ter'] = getattr(fund, 'totalExpenseRatio', None)
+        metadata['fecha_creacion'] = getattr(fund, 'inceptionDate', None)
+        metadata['domicilio'] = getattr(fund, 'domicile', None)
+        
+        # El SRRI puede estar en un atributo anidado
+        try:
+            metadata['srri'] = fund.collectedSRRI['rank']
+        except (AttributeError, KeyError, TypeError):
+            metadata['srri'] = None
 
-        metadata = {
-            "isin": fund.isin,
-            "nombre": fund.name,
-            "nombre_legal": snapshot_data.get("LegalName", fund.name),
-            "gestora": snapshot_data.get("BrandingCompanyName"),
-            "ter": snapshot_data.get("TotalExpenseRatio"),
-            "fecha_creacion": snapshot_data.get("InceptionDate"),
-            "domicilio": snapshot_data.get("Domicile"),
-            "srri": snapshot_data.get("CollectedSRRI", {}).get("Rank"),
-        }
+        # Si faltan datos clave (como el TER o la gestora), hacemos la llamada a snapshot() como fallback
+        if not metadata['ter'] or not metadata['gestora']:
+            snapshot_data = fund.snapshot()
+            if snapshot_data:
+                metadata['nombre_legal'] = snapshot_data.get("LegalName", metadata['nombre_legal'])
+                metadata['gestora'] = snapshot_data.get("BrandingCompanyName", metadata['gestora'])
+                metadata['ter'] = snapshot_data.get("TotalExpenseRatio", metadata['ter'])
+                metadata['fecha_creacion'] = snapshot_data.get("InceptionDate", metadata['fecha_creacion'])
+                metadata['domicilio'] = snapshot_data.get("Domicile", metadata['domicilio'])
+                if snapshot_data.get("CollectedSRRI"):
+                    metadata['srri'] = snapshot_data["CollectedSRRI"].get("Rank", metadata['srri'])
+        
         return metadata
 
     except ValueError:
@@ -127,7 +144,6 @@ def _fetch_fund_metadata(isin: str) -> dict | None:
     except Exception as e:
         st.error(f"Ocurrió un error inesperado al buscar el fondo: {e}")
         return None
-
 
 # --- FUNCIONES PÚBLICAS REFACTORIZADAS ---
 def find_and_add_fund_by_isin(new_isin):

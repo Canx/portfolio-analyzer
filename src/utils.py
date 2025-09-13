@@ -33,7 +33,7 @@ def load_all_navs(_data_manager, isines: tuple, force_update_isin: str = None):
             # Si no es la primera petición, hacemos una pausa
             if i > 0:
                 # Esperamos entre 1 y 3 segundos para parecer más humanos
-                pausa = random.uniform(3, 10)
+                pausa = random.uniform(5, 10)
                 time.sleep(pausa)
 
             force = (isin == force_update_isin)
