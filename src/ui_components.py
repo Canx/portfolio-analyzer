@@ -383,3 +383,72 @@ def render_update_panel(isines, mapa_isin_nombre):
             # 3. Limpiamos toda la caché para recargar ambos ficheros y re-ejecutamos
             st.cache_data.clear()
             st.rerun()
+
+
+
+def render_efficient_frontier(frontier_df: pd.DataFrame, df_metrics: pd.DataFrame, portfolio_metrics: dict):
+    """
+    Dibuja el gráfico de la Frontera Eficiente.
+    
+    Args:
+        frontier_df (pd.DataFrame): DataFrame con los puntos de la frontera.
+        df_metrics (pd.DataFrame): DataFrame con las métricas de los fondos individuales.
+        portfolio_metrics (dict): Diccionario con las métricas de la cartera activa.
+    """
+    st.markdown("---")
+    st.subheader("🌐 Frontera Eficiente")
+    st.write(
+        "Este gráfico muestra el conjunto de carteras óptimas. "
+        "Tu objetivo es situar tu cartera (la estrella) lo más cerca posible de la curva, "
+        "en el punto que mejor se ajuste a tu perfil de riesgo/retorno."
+    )
+
+    # Creamos la figura
+    fig = go.Figure()
+
+    # 1. Añadimos la curva de la frontera eficiente
+    fig.add_trace(
+        go.Scatter(
+            x=frontier_df['volatility_ann_%'],
+            y=frontier_df['annualized_return_%'],
+            mode='lines',
+            name='Frontera Eficiente',
+            line=dict(color='blue', width=2, dash='dash')
+        )
+    )
+
+    # 2. Añadimos los puntos de los fondos individuales
+    fondos_metrics = df_metrics[~df_metrics["nombre"].str.startswith('💼')]
+    fig.add_trace(
+        go.Scatter(
+            x=fondos_metrics['volatility_ann_%'],
+            y=fondos_metrics['annualized_return_%'],
+            mode='markers',
+            marker=dict(size=8),
+            name='Fondos Individuales',
+            text=fondos_metrics['nombre'], # Texto para el hover
+            hoverinfo='text+x+y'
+        )
+    )
+
+    # 3. Añadimos el punto de la cartera activa
+    if portfolio_metrics:
+        fig.add_trace(
+            go.Scatter(
+                x=[portfolio_metrics['volatility_ann_%']],
+                y=[portfolio_metrics['annualized_return_%']],
+                mode='markers',
+                marker=dict(color='red', size=15, symbol='star'),
+                name=portfolio_metrics['nombre'],
+                hoverinfo='name+x+y'
+            )
+        )
+        
+    fig.update_layout(
+        title="Frontera Eficiente de la Cartera",
+        xaxis_title="Volatilidad Anualizada (%)",
+        yaxis_title="Rentabilidad Anualizada (%)",
+        legend_title="Leyenda",
+        height=500
+    )
+    st.plotly_chart(fig, use_container_width=True)

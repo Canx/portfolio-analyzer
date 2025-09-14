@@ -8,13 +8,10 @@ from src.utils import load_config, load_all_navs
 # Importaciones de los módulos
 from src.data_manager import DataManager, filtrar_por_horizonte
 from src.metrics import calcular_metricas_desde_rentabilidades
-from src.optimizer import optimize_portfolio
 from src.portfolio import Portfolio
-from src.ui_components import (
-    render_sidebar,
-    render_main_content,
-)  # Quitamos la función de añadir fondo que ya no está aquí
 from src.state import initialize_session_state  # <-- Importamos la nueva función
+from src.optimizer import optimize_portfolio, calculate_efficient_frontier
+from src.ui_components import render_sidebar, render_main_content, render_efficient_frontier
 
 # --- INICIALIZAMOS EL ESTADO AL PRINCIPIO DE LA PÁGINA ---
 initialize_session_state()
@@ -108,12 +105,13 @@ for isin in daily_returns.columns:
 df_metrics = pd.DataFrame(metricas)
 
 portfolio = Portfolio(filtered_navs, pesos_cartera_activa)
+portfolio_metrics = {}
 if portfolio and portfolio.nav is not None:
     metricas_cartera = portfolio.calculate_metrics()
     metricas_cartera["nombre"] = f"💼 {cartera_activa_nombre}"
-    df_metrics = pd.concat(
-        [pd.DataFrame([metricas_cartera]), df_metrics], ignore_index=True
-    )
+    # Guardamos las métricas de la cartera para el gráfico
+    portfolio_metrics = metricas_cartera
+    df_metrics = pd.concat([pd.DataFrame([metricas_cartera]), df_metrics], ignore_index=True)
 
 # --- NUEVO BLOQUE DE CÓDIGO PARA ORDENAR ---
 # Creamos una columna temporal con los pesos para poder ordenar
@@ -128,6 +126,7 @@ df_metrics = df_metrics.sort_values(by="peso_cartera", ascending=False).drop(
 
 # 8. RENDERIZAR RESULTADOS
 render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre)
+
 
 # Opcional: El panel de actualización puede seguir aquí o moverse al explorador
 # render_update_panel(isines_a_cargar, mapa_isin_nombre)
