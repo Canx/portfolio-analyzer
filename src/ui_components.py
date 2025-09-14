@@ -163,9 +163,18 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
 
             st.markdown("---")
             st.subheader("⚖️ Optimización")
+
+            opciones_optimizacion = ["MSR", "MV", "HRP"]
+            
             modelo_optimización = st.selectbox(
-                "Selecciona un modelo", ["HRP", "MV", "MSR"],
-                format_func=lambda x: {"HRP": "Hierarchical Risk Parity", "MV": "Mínima Volatilidad", "MSR": "Máximo Ratio de Sharpe"}[x],
+                "Selecciona un modelo",
+                options=opciones_optimizacion,
+                index=0, # 2. Establecemos el índice 0 ("MSR") como valor por defecto
+                format_func=lambda x: {
+                    "MSR": "Máximo Ratio de Sharpe",
+                    "MV": "Mínima Volatilidad",
+                    "HRP": "Hierarchical Risk Parity"
+                }[x],
                 key=f"model_{st.session_state.cartera_activa}"
             )
             risk_measure = 'MV'
