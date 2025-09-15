@@ -8,27 +8,18 @@ import plotly.express as px
 import plotly.graph_objects as go
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
 
-
 def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
     """
-    Renderiza la barra lateral.
-    Reemplaza "Crear" por "Renombrar" para un flujo de trabajo más simple.
+    Renderiza la barra lateral con un completo gestor de carteras,
+    incluyendo la opción de crear una cartera nueva y vacía.
     """
     with st.sidebar:
         st.header("Configuración del Análisis")
-        horizonte = st.selectbox(
-            "Horizonte temporal",
-            HORIZONTE_OPCIONES,
-            index=HORIZONTE_DEFAULT_INDEX,
-            key="horizonte"
-        )
-
+        horizonte = st.selectbox("Horizonte temporal", ["3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
         st.markdown("---")
-
         st.header("🗂️ Gestor de Carteras")
+        
         lista_carteras = list(st.session_state.carteras.keys())
-
-        # Si no hay carteras, creamos una por defecto para empezar
         if not lista_carteras:
             st.session_state.carteras["Mi Primera Cartera"] = {"pesos": {}}
             st.session_state.cartera_activa = "Mi Primera Cartera"
@@ -39,53 +30,50 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
             lista_carteras,
             index=lista_carteras.index(st.session_state.cartera_activa) if st.session_state.cartera_activa in lista_carteras else 0
         )
-        
         if cartera_seleccionada != st.session_state.cartera_activa:
             st.session_state.cartera_activa = cartera_seleccionada
             st.rerun()
 
-        # --- SECCIÓN DE GESTIÓN SIMPLIFICADA ---
         with st.expander("Opciones de Gestión"):
-            
-            # --- Renombrar Cartera ---
-            if st.session_state.cartera_activa:
-                nuevo_nombre_cartera = st.text_input(
-                    "Renombrar cartera activa:", 
-                    value=st.session_state.cartera_activa
-                )
-                if nuevo_nombre_cartera != st.session_state.cartera_activa:
-                    if nuevo_nombre_cartera in st.session_state.carteras:
-                        st.warning("Ese nombre de cartera ya existe.")
+            # --- FORMULARIO PARA CREAR CARTERA NUEVA ---
+            with st.form("form_create_portfolio"):
+                st.markdown("**Crear nueva cartera vacía**")
+                new_portfolio_name = st.text_input("Nombre de la nueva cartera", label_visibility="collapsed")
+                submitted_create = st.form_submit_button("➕ Crear")
+                if submitted_create and new_portfolio_name:
+                    if new_portfolio_name in st.session_state.carteras:
+                        st.warning("Ya existe una cartera con ese nombre.")
                     else:
-                        # Creamos una nueva entrada y borramos la antigua para efectuar el renombramiento
-                        st.session_state.carteras[nuevo_nombre_cartera] = st.session_state.carteras.pop(st.session_state.cartera_activa)
-                        st.session_state.cartera_activa = nuevo_nombre_cartera
+                        st.session_state.carteras[new_portfolio_name] = {"pesos": {}}
+                        st.session_state.cartera_activa = new_portfolio_name
                         st.rerun()
-
-            # --- Botones de Copiar y Borrar ---
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button(f"❐ Copiar Cartera"):
-                    nombre_original = st.session_state.cartera_activa
-                    # Creamos un nombre único para la copia
-                    nuevo_nombre = f"Copia de {nombre_original}"
-                    i = 1
-                    while nuevo_nombre in st.session_state.carteras:
-                        i += 1
-                        nuevo_nombre = f"Copia ({i}) de {nombre_original}"
-                        
-                    # Usamos .copy() para asegurarnos de que es una copia real y no una referencia
-                    st.session_state.carteras[nuevo_nombre] = st.session_state.carteras[nombre_original].copy()
-                    st.session_state.cartera_activa = nuevo_nombre
-                    st.toast(f"Cartera '{nombre_original}' copiada a '{nuevo_nombre}'!")
-                    st.rerun()
             
-            with col2:
-                if st.button(f"🗑️ Borrar Cartera", type="primary"):
+            st.markdown("---")
+
+            # --- Opciones para la cartera activa ---
+            if st.session_state.cartera_activa:
+                st.markdown(f"**Opciones para '{st.session_state.cartera_activa}'**")
+                
+                # Botones de Copiar y Borrar
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("❐ Copiar", help=f"Crea un duplicado de '{st.session_state.cartera_activa}'"):
+                        nombre_original = st.session_state.cartera_activa
+                        nuevo_nombre = f"Copia de {nombre_original}"
+                        i = 1
+                        while nuevo_nombre in st.session_state.carteras:
+                            i += 1
+                            nuevo_nombre = f"Copia ({i}) de {nombre_original}"
+                        st.session_state.carteras[nuevo_nombre] = st.session_state.carteras[nombre_original].copy()
+                        st.session_state.cartera_activa = nuevo_nombre
+                        st.toast(f"Cartera '{nombre_original}' copiada a '{nuevo_nombre}'!")
+                        st.rerun()
+                with col2:
+                    if st.button("🗑️ Borrar", type="primary", help=f"Elimina la cartera '{st.session_state.cartera_activa}'"):
                         del st.session_state.carteras[st.session_state.cartera_activa]
                         st.session_state.cartera_activa = next(iter(st.session_state.carteras), None)
                         st.rerun()
-
+        
         st.markdown("---")
 
         run_optimization = False
@@ -94,67 +82,52 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
 
         if st.session_state.cartera_activa:
             st.header(f"💼 Composición de '{st.session_state.cartera_activa}'")
-            
-            # --- NUEVO: CAMPO PARA EL MONTO TOTAL ---
-            st.number_input(
-                "Monto total de la cartera (€)",
-                min_value=0,
-                step=1000,
-                key='total_investment_amount', # Vinculado directamente al estado de la sesión
-                help="Introduce el valor total de tu cartera para ver la asignación en euros."
-            )
+            st.number_input("Monto total de la cartera (€)", min_value=0, step=1000, key='total_investment_amount')
             total_amount = st.session_state.total_investment_amount
-
+            
             pesos_actuales = st.session_state.carteras[st.session_state.cartera_activa]['pesos']
             
-            # --- CÓDIGO REINTRODUCIDO ---
+            # --- LÓGICA PARA AÑADIR FONDOS ---
             cartera_actual_isines = pesos_actuales.keys()
             candidatos = [n for n in mapa_nombre_isin.keys() if mapa_nombre_isin[n] not in cartera_actual_isines]
             add_sel = st.selectbox("Añadir fondo a la cartera", ["—"] + candidatos, index=0, key=f"add_fund_{st.session_state.cartera_activa}")
-
             if add_sel != "—" and st.button("➕ Añadir"):
                 nuevo_isin = mapa_nombre_isin[add_sel]
-                pesos_actuales[nuevo_isin] = 0 # Lo añadimos con peso 0
+                pesos_actuales[nuevo_isin] = 0
                 st.rerun()
-            # --- FIN DEL CÓDIGO REINTRODUCIDO ---
 
-            pesos_previos = pesos_actuales.copy()
             isines_ordenados = sorted(pesos_actuales.keys(), key=lambda isin: pesos_actuales.get(isin, 0), reverse=True)
-
+            
+            # --- BUCLE DE VISUALIZACIÓN DE FONDOS ---
             for isin in isines_ordenados:
                 col_name, col_minus, col_slider, col_plus, col_del = st.columns([4, 1, 4, 1, 1])
                 with col_name:
                     st.markdown(f"**{mapa_isin_nombre.get(isin, isin)}**")
-
-                    # --- NUEVO: MUESTRA LA CANTIDAD EN EUROS ---
                     peso_en_porcentaje = pesos_actuales.get(isin, 0)
                     cantidad_en_euros = (peso_en_porcentaje / 100) * total_amount
                     st.caption(f"{cantidad_en_euros:,.2f} €")
-
+                
+                peso_actual = pesos_actuales.get(isin, 0)
                 with col_minus:
                     if st.button("➖", key=f"minus_{st.session_state.cartera_activa}_{isin}"):
-                        if pesos_actuales[isin] > 0: pesos_actuales[isin] -= 1
+                        if peso_actual > 0: 
+                            pesos_actuales[isin] = peso_actual - 1
+                            st.rerun()
                 with col_slider:
-                    pesos_actuales[isin] = st.slider("Peso %", 0, 100, pesos_actuales.get(isin, 0), 1, key=f"peso_{st.session_state.cartera_activa}_{isin}", label_visibility="collapsed")
+                    nuevo_peso = st.slider("Peso %", 0, 100, peso_actual, 1, key=f"peso_{st.session_state.cartera_activa}_{isin}", label_visibility="collapsed")
+                    if nuevo_peso != peso_actual:
+                        pesos_actuales[isin] = nuevo_peso
+                        # No es necesario rerun, el slider lo provoca
                 with col_plus:
                     if st.button("➕", key=f"plus_{st.session_state.cartera_activa}_{isin}"):
-                        if pesos_actuales[isin] < 100: pesos_actuales[isin] += 1
+                        if peso_actual < 100: 
+                            pesos_actuales[isin] = peso_actual + 1
+                            st.rerun()
                 with col_del:
                     if st.button("🗑️", key=f"remove_{st.session_state.cartera_activa}_{isin}"):
                         del pesos_actuales[isin]
                         st.rerun()
 
-            isin_modificado = None
-            for isin, peso in pesos_actuales.items():
-                if peso != pesos_previos.get(isin, 0):
-                    isin_modificado = isin
-                    break
-            
-            if isin_modificado:
-                # La función de ajuste se elimina, ya que no se usa
-                # ajustar_pesos_direccional(...)
-                pass # Ya no hay reajuste automático
-            
             if pesos_actuales:
                 total_peso = sum(pesos_actuales.values())
                 st.metric("Suma Total", f"{total_peso}%")
@@ -164,19 +137,30 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
             st.markdown("---")
             st.subheader("⚖️ Optimización")
 
-            opciones_optimizacion = ["MSR", "MV", "HRP"]
+            # --- SECCIÓN MODIFICADA ---
+            opciones_optimizacion = ["MSR", "MV", "HRP", "TARGET_RET"] # Añadimos el nuevo modelo
             
             modelo_optimización = st.selectbox(
                 "Selecciona un modelo",
                 options=opciones_optimizacion,
-                index=0, # 2. Establecemos el índice 0 ("MSR") como valor por defecto
+                index=0,
                 format_func=lambda x: {
                     "MSR": "Máximo Ratio de Sharpe",
                     "MV": "Mínima Volatilidad",
-                    "HRP": "Hierarchical Risk Parity"
+                    "HRP": "Hierarchical Risk Parity",
+                    "TARGET_RET": "Rentabilidad Objetivo" # Nuevo nombre
                 }[x],
                 key=f"model_{st.session_state.cartera_activa}"
             )
+            
+            target_return = 0.0 # Valor por defecto
+            # Mostramos el campo de entrada solo para el nuevo modelo
+            if modelo_optimización == 'TARGET_RET':
+                target_return = st.number_input(
+                    "Rentabilidad Anual Objetivo (%)", 
+                    min_value=-20.0, max_value=50.0, value=5.0, step=0.5
+                )
+
             risk_measure = 'MV'
             if modelo_optimización == 'HRP':
                 rms_disponibles = ['MV', 'MAD', 'MSV', 'VaR', 'CVaR', 'CDaR']
@@ -187,8 +171,7 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
         else:
             st.warning("Crea o selecciona una cartera para continuar.")
         
-    return horizonte, run_optimization, modelo_optimización, risk_measure
-
+    return horizonte, run_optimization, modelo_optimización, risk_measure, target_return
 
 def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
     """

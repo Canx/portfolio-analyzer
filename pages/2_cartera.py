@@ -10,7 +10,7 @@ from src.data_manager import DataManager, filtrar_por_horizonte
 from src.metrics import calcular_metricas_desde_rentabilidades
 from src.portfolio import Portfolio
 from src.state import initialize_session_state  # <-- Importamos la nueva función
-from src.optimizer import optimize_portfolio, calculate_efficient_frontier
+from src.optimizer import optimize_portfolio, calculate_efficient_frontier, optimize_for_target_return
 from src.ui_components import render_sidebar, render_main_content, render_efficient_frontier
 
 # --- INICIALIZAMOS EL ESTADO AL PRINCIPIO DE LA PÁGINA ---
@@ -40,7 +40,7 @@ mapa_nombre_isin = {f"{f['nombre']} ({f['isin']})": f["isin"] for f in fondos_co
 data_manager = DataManager()
 
 # 2. RENDERIZAR SIDEBAR Y OBTENER ACCIONES
-horizonte, run_optimization, modelo_seleccionado, risk_measure = render_sidebar(
+horizonte, run_optimization, modelo_seleccionado, risk_measure, target_return = render_sidebar(
     mapa_nombre_isin, mapa_isin_nombre
 )
 save_state_to_browser()  # Guardamos el estado en cada interacción
@@ -78,10 +78,14 @@ daily_returns = filtered_navs.pct_change().dropna()
 
 # 6. LÓGICA DE OPTIMIZACIÓN
 if run_optimization and not daily_returns.empty:
-    st.info("Ejecutando optimización...")
-    pesos_opt = optimize_portfolio(
-        daily_returns, model=modelo_seleccionado, risk_measure=risk_measure
-    )
+    pesos_opt = None
+    if modelo_seleccionado == 'TARGET_RET':
+        st.info(f"Buscando cartera de mínimo riesgo para una rentabilidad >= {target_return}%...")
+        pesos_opt = optimize_for_target_return(daily_returns, target_return)
+    else:
+        st.info(f"Ejecutando optimización con el modelo: {modelo_seleccionado}...")
+        pesos_opt = optimize_portfolio(daily_returns, model=modelo_seleccionado, risk_measure=risk_measure)
+
     if pesos_opt is not None:
         pesos_opt_dict = {isin: int(round(p * 100)) for isin, p in pesos_opt.items()}
         resto = 100 - sum(pesos_opt_dict.values())
@@ -93,6 +97,8 @@ if run_optimization and not daily_returns.empty:
             f"Cartera '{cartera_activa_nombre}' optimizada con {modelo_seleccionado} ✅"
         )
         st.rerun()
+    elif modelo_seleccionado == 'TARGET_RET':
+        st.error(f"No se encontró ninguna cartera que cumpla con una rentabilidad objetivo del {target_return}%. Prueba con un valor más bajo.")
 
 # 7. CÁLCULO DE MÉTRICAS Y CARTERA
 mapa_datos_fondos = {f["isin"]: f for f in fondos_config}

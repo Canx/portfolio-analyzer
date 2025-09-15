@@ -28,9 +28,11 @@ class DataManager:
         # --- LÓGICA DE PAUSA INTELIGENTE ---
         # Si ya hemos hecho una llamada a la API en esta ejecución, esperamos.
         if self.api_call_made_in_this_run:
-            pausa = random.uniform(1, 3)
+            pausa = random.uniform(8, 10)
             time.sleep(pausa)
 
+        self.api_call_made_in_this_run = True
+        
         try:
             fund = ms.Funds(isin)
             nav_data = pd.DataFrame(fund.nav(start_date=start_date, end_date=end_date))
@@ -39,10 +41,10 @@ class DataManager:
             if nav_col is None: return None
             df = nav_data.rename(columns={nav_col: "nav"})[["date", "nav"]]
             df["date"] = pd.to_datetime(df["date"])
-            self.api_call_made_in_this_run = True
             return df.sort_values("date").drop_duplicates(subset="date")
         except Exception as e:
             st.error(f"Error descargando {isin}: {e}")
+            
             return None
 
     def get_fund_nav(self, isin: str, force_to_today: bool = False) -> pd.DataFrame | None:
