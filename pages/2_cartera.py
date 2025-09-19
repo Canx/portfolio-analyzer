@@ -186,7 +186,7 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
             st.subheader("⚖️ Optimización")
 
             # --- SECCIÓN MODIFICADA ---
-            opciones_optimizacion = ["MSR", "MV", "HRP", "TARGET_RET"] # Añadimos el nuevo modelo
+            opciones_optimizacion = ["MSR", "MV", "HRP"] # Añadimos el nuevo modelo
             
             modelo_optimización = st.selectbox(
                 "Selecciona un modelo",
@@ -195,19 +195,10 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
                 format_func=lambda x: {
                     "MSR": "Máximo Ratio de Sharpe",
                     "MV": "Mínima Volatilidad",
-                    "HRP": "Hierarchical Risk Parity",
-                    "TARGET_RET": "Rentabilidad Objetivo" # Nuevo nombre
+                    "HRP": "Hierarchical Risk Parity"   
                 }[x],
                 key=f"model_{st.session_state.cartera_activa}"
             )
-            
-            target_return = 0.0 # Valor por defecto
-            # Mostramos el campo de entrada solo para el nuevo modelo
-            if modelo_optimización == 'TARGET_RET':
-                target_return = st.number_input(
-                    "Rentabilidad Anual Objetivo (%)", 
-                    min_value=-20.0, max_value=50.0, value=5.0, step=0.5
-                )
 
             risk_measure = 'MV'
             if modelo_optimización == 'HRP':
@@ -219,7 +210,7 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
         else:
             st.warning("Crea o selecciona una cartera para continuar.")
         
-    return horizonte, run_optimization, modelo_optimización, risk_measure, target_return
+    return horizonte, run_optimization, modelo_optimización, risk_measure
 
 def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
     """
@@ -508,7 +499,7 @@ mapa_nombre_isin = {f"{f['nombre']} ({f['isin']})": f["isin"] for f in fondos_co
 data_manager = DataManager()
 
 # 2. RENDERIZAR SIDEBAR Y OBTENER ACCIONES
-horizonte, run_optimization, modelo_seleccionado, risk_measure, target_return = render_sidebar(
+horizonte, run_optimization, modelo_seleccionado, risk_measure = render_sidebar(
     mapa_nombre_isin, mapa_isin_nombre
 )
 save_state_to_browser()
@@ -550,8 +541,7 @@ if run_optimization and not daily_returns.empty:
     pesos_opt = optimize_portfolio(
         daily_returns,
         model=modelo_seleccionado,
-        risk_measure=risk_measure,
-        target_return=target_return
+        risk_measure=risk_measure
     )
 
     if pesos_opt is not None:
