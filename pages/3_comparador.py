@@ -139,7 +139,12 @@ if lista_metricas:
         "volatility_ann_%": "Volatilidad (%)", "sharpe_ann": "Ratio Sharpe",
         "max_drawdown_%": "Caída Máxima (%)"
     }).set_index("Activo")[["Rent. Anual (%)", "Volatilidad (%)", "Ratio Sharpe", "Caída Máxima (%)"]]
-    st.dataframe(df_display.style.format("{:.2f}"))
+    st.dataframe(
+        df_display.style.format("{:.2f}")
+                  .background_gradient(cmap='RdYlGn', subset=['Rent. Anual (%)', 'Ratio Sharpe', 'Caída Máxima (%)'])
+                  # --- LÍNEA CORREGIDA ---
+                  .background_gradient(cmap='RdYlGn_r', subset=['Volatilidad (%)'])
+    )
 
 st.markdown("---")
 
