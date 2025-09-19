@@ -260,7 +260,13 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
                 "Caída Máxima (%)",
             ]
         ]
-        st.dataframe(df_display.style.format("{:.2f}"))
+        # --- LÍNEA MODIFICADA ---
+        st.dataframe(
+        df_display.style.format("{:.2f}")
+                  .background_gradient(cmap='RdYlGn', subset=['Rent. Anual (%)', 'Ratio Sharpe', 'Caída Máxima (%)'])
+                  # --- LÍNEA CORREGIDA ---
+                  .background_gradient(cmap='RdYlGn_r', subset=['Volatilidad Anual (%)'])
+        )
 
     st.markdown("---")
 
@@ -559,6 +565,23 @@ if run_optimization and not daily_returns.empty:
     else:
         st.error("No se pudo optimizar la cartera con los parámetros seleccionados.")
 
+# --- NUEVO: CÁLCULO DEL TER PONDERADO ---
+if pesos_cartera_activa:
+    ter_ponderado = 0
+    for isin, peso in pesos_cartera_activa.items():
+        # Buscamos el TER del fondo en la configuración
+        ter_fondo = next((f.get('ter', 0) for f in fondos_config if f.get('isin') == isin), 0)
+        # Nos aseguramos de que el TER sea un número
+        try:
+            ter_numerico = float(ter_fondo)
+        except (ValueError, TypeError):
+            ter_numerico = 0
+        
+        ter_ponderado += (peso / 100) * ter_numerico
+    
+    # Mostramos el resultado en una métrica
+    st.metric("Costo Total de la Cartera (TER Ponderado)", f"{ter_ponderado:.2f}%")
+    st.markdown("---")
 
 # 7. CÁLCULO DE MÉTRICAS Y CARTERA
 mapa_datos_fondos = {f["isin"]: f for f in fondos_config}
