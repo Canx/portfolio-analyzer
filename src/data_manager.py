@@ -32,7 +32,7 @@ class DataManager:
             time.sleep(pausa)
 
         self.api_call_made_in_this_run = True
-        
+
         try:
             fund = ms.Funds(isin)
             nav_data = pd.DataFrame(fund.nav(start_date=start_date, end_date=end_date))
@@ -90,7 +90,7 @@ def filtrar_por_horizonte(df: pd.DataFrame, horizonte: str) -> pd.DataFrame:
             start = anchor - pd.DateOffset(months=months)
         except (ValueError, TypeError):
             pass
-    elif horizonte in ("1y", "3y", "5y"):
+    elif horizonte in ("1y", "2y", "3y", "5y"):
         years = int(horizonte[:-1])
         start = anchor - pd.DateOffset(years=years)
     elif horizonte.lower() == "ytd":

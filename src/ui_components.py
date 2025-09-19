@@ -15,7 +15,11 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
     """
     with st.sidebar:
         st.header("Configuración del Análisis")
-        horizonte = st.selectbox("Horizonte temporal", ["3m", "6m", "YTD", "1y", "3y", "5y", "max"], key="horizonte")
+        horizonte = st.sidebar.selectbox(
+            "Horizonte temporal",
+            HORIZONTE_OPCIONES,
+            index=HORIZONTE_DEFAULT_INDEX,
+            key="horizonte")
         st.markdown("---")
         st.header("🗂️ Gestor de Carteras")
         
@@ -54,6 +58,28 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
             if st.session_state.cartera_activa:
                 st.markdown(f"**Opciones para '{st.session_state.cartera_activa}'**")
                 
+                # --- NUEVO: FORMULARIO PARA RENOMBRAR CARTERA ---
+                with st.form("form_rename_portfolio"):
+                    st.markdown("**Renombrar cartera activa**")
+                    new_name = st.text_input(
+                        "Nuevo nombre",
+                        value=st.session_state.cartera_activa,
+                        label_visibility="collapsed"
+                    )
+                    submitted_rename = st.form_submit_button("🔁 Renombrar")
+
+                    if submitted_rename:
+                        old_name = st.session_state.cartera_activa
+                        if new_name and new_name != old_name:
+                            if new_name in st.session_state.carteras:
+                                st.warning("Ya existe una cartera con ese nombre.")
+                            else:
+                                # Renombramos la cartera
+                                st.session_state.carteras[new_name] = st.session_state.carteras.pop(old_name)
+                                st.session_state.cartera_activa = new_name
+                                st.toast(f"Cartera '{old_name}' renombrada a '{new_name}'!")
+                                st.rerun()
+                
                 # Botones de Copiar y Borrar
                 col1, col2 = st.columns(2)
                 with col1:
@@ -73,6 +99,7 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
                         del st.session_state.carteras[st.session_state.cartera_activa]
                         st.session_state.cartera_activa = next(iter(st.session_state.carteras), None)
                         st.rerun()
+    
         
         st.markdown("---")
 
