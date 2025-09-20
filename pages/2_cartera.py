@@ -250,15 +250,17 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
         )
         st.plotly_chart(fig_pie, use_container_width=True)
 
-    # Tabla de Métricas (no cambia)
+    # Tabla de Métricas
     st.subheader(f"📑 Métricas para el horizonte: {st.session_state.horizonte}")
     if not df_metrics.empty:
+        # --- BLOQUE MODIFICADO ---
         df_display = df_metrics.rename(
             columns={
                 "nombre": "Nombre",
                 "annualized_return_%": "Rent. Anual (%)",
                 "volatility_ann_%": "Volatilidad Anual (%)",
                 "sharpe_ann": "Ratio Sharpe",
+                "sortino_ann": "Ratio Sortino", # <-- NUEVA ETIQUETA
                 "max_drawdown_%": "Caída Máxima (%)",
             }
         ).set_index("Nombre")[
@@ -266,15 +268,17 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
                 "Rent. Anual (%)",
                 "Volatilidad Anual (%)",
                 "Ratio Sharpe",
+                "Ratio Sortino", # <-- NUEVA COLUMNA
                 "Caída Máxima (%)",
             ]
         ]
-        # --- LÍNEA MODIFICADA ---
+        
+        # Añadimos el nuevo ratio al coloreado de la tabla
         st.dataframe(
-        df_display.style.format("{:.2f}")
-                  .background_gradient(cmap='RdYlGn', subset=['Rent. Anual (%)', 'Ratio Sharpe', 'Caída Máxima (%)'])
-                  # --- LÍNEA CORREGIDA ---
-                  .background_gradient(cmap='RdYlGn_r', subset=['Volatilidad Anual (%)'])
+            df_display.style.format("{:.2f}")
+                      .background_gradient(cmap='RdYlGn', subset=['Rent. Anual (%)', 'Ratio Sharpe', 'Ratio Sortino', 'Caída Máxima (%)'])
+                      .background_gradient(cmap='RdYlGn_r', subset=['Volatilidad Anual (%)']),
+                      use_container_width=True # 
         )
 
     st.markdown("---")
@@ -639,6 +643,17 @@ def load_all_navs(_data_manager, isines: tuple, force_update_isin: str = None):
     return pd.concat(all_navs, axis=1).ffill()
 
 
+# Al final de la ejecución del script, guardamos el estado actual de las carteras.
 if 'carteras' in st.session_state and 'user_info' in st.session_state and st.session_state.user_info:
-    save_user_data(db, st.session_state.user_info, "carteras", st.session_state.carteras)
-
+    
+    # --- LÍNEA CORREGIDA ---
+    # Nos aseguramos de pasar los 5 argumentos que la función necesita:
+    # db, auth, el diccionario de user_info, el nombre de la clave ("profile"), y los datos a guardar.
+    
+    # Preparamos el diccionario completo del perfil a guardar
+    profile_data_to_save = {
+        "subscription_plan": st.session_state.user_info.get("subscription_plan", "free"),
+        "carteras": st.session_state.get("carteras", {})
+    }
+    
+    save_user_data(db, auth, st.session_state.user_info, "profile", profile_data_to_save)
