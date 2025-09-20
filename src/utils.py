@@ -4,8 +4,6 @@ import streamlit as st
 import pandas as pd
 import json
 from pathlib import Path
-import time
-import random
 
 @st.cache_data
 def load_config(config_file="fondos.json"):
@@ -16,27 +14,22 @@ def load_config(config_file="fondos.json"):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f).get("fondos", [])
 
-
-# --- FUNCIÓN CACHEADA CORREGIDA ---
 @st.cache_data
-def load_single_fund_nav_cached(_data_manager, isin: str, force_update: bool = False):
+def load_single_fund_nav_cached(_data_manager, isin: str):
     """
-    Obtiene el NAV de un único fondo y cachea el resultado.
+    Obtiene el NAV de un único fondo desde el CSV y cachea el resultado.
+    Ya no tiene el parámetro 'force_update'.
     """
-    # --- LÍNEA CORREGIDA ---
-    # Usamos 'force_update', que es el nombre correcto del parámetro.
-    return _data_manager.get_fund_nav(isin, force_to_today=force_update)
+    return _data_manager.get_fund_nav(isin)
 
-
-def load_all_navs(_data_manager, isines: tuple, force_update_isin: str = None):
+def load_all_navs(_data_manager, isines: tuple):
     """
-    Orquesta la carga de datos. YA NO NECESITA LA PAUSA.
+    Orquesta la carga de datos LEYENDO SIEMPRE DESDE LOS FICHEROS CSV.
+    Ya no tiene el parámetro 'force_update_isin'.
     """
     all_navs = {}
     for isin in isines:
-        # --- PAUSA ELIMINADA DE AQUÍ ---
-        force = (isin == force_update_isin)
-        df = load_single_fund_nav_cached(_data_manager, isin, force_update=force)
+        df = load_single_fund_nav_cached(_data_manager, isin)
         
         if df is not None and 'nav' in df.columns:
             all_navs[isin] = df['nav']

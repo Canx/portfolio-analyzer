@@ -10,15 +10,16 @@ from src.utils import load_config, load_all_navs
 from src.data_manager import DataManager, filtrar_por_horizonte
 from src.portfolio import Portfolio
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
+from src.auth import logout_user, page_init_and_auth
 
-from src.auth import logout_user
+auth, db = page_init_and_auth()
 
-initialize_session_state()
-
-# --- PROTECCIÓN DE LA PÁGINA ---
+# --- Bloque de Protección ---
 if not st.session_state.get("logged_in", False):
-    st.error("Debes iniciar sesión para acceder a esta página.")
-    st.stop()
+    st.warning("🔒 Debes iniciar sesión para acceder a esta página.")
+    # Ofrecemos un enlace para facilitar la navegación al login
+    st.page_link("app.py", label="Ir a la página de Login", icon="🏠")
+    st.stop() # Detenemos la ejecución del resto de la página
 
 # --- BOTÓN DE LOGOUT EN LA SIDEBAR ---
 with st.sidebar:

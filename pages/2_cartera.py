@@ -18,16 +18,17 @@ from src.optimizer import optimize_portfolio
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
 
 from src.database import save_user_data
-from src.auth import initialize_firebase, logout_user
+from src.auth import logout_user
+from src.auth import page_init_and_auth
 
-initialize_session_state()
-auth, db = initialize_firebase()
+auth, db = page_init_and_auth()
 
-
-# --- PROTECCIÓN DE LA PÁGINA ---
+# --- Bloque de Protección ---
 if not st.session_state.get("logged_in", False):
-    st.error("Debes iniciar sesión para acceder a esta página.")
-    st.stop()
+    st.warning("🔒 Debes iniciar sesión para acceder a esta página.")
+    # Ofrecemos un enlace para facilitar la navegación al login
+    st.page_link("app.py", label="Ir a la página de Login", icon="🏠")
+    st.stop() # Detenemos la ejecución del resto de la página
 
 # --- BOTÓN DE LOGOUT EN LA SIDEBAR ---
 with st.sidebar:
@@ -538,11 +539,8 @@ if not isines_a_cargar:
     st.stop()
 
 # 5. CARGA DE DATOS Y PROCESADO
-force_update_isin = st.session_state.pop("force_update_isin", None)
 with st.spinner(f"Cargando datos de precios para {len(isines_a_cargar)} fondos en la cartera..."):
-    all_navs_df = load_all_navs(
-        data_manager, isines_a_cargar, force_update_isin=force_update_isin
-    )
+    all_navs_df = load_all_navs(data_manager, isines_a_cargar)
 if all_navs_df.empty:
     st.stop()
 

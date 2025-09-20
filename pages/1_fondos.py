@@ -12,10 +12,9 @@ from src.state import initialize_session_state
 from src.data_manager import find_and_add_fund_by_isin, update_fund_details_in_config, DataManager, filtrar_por_horizonte
 from src.metrics import calcular_metricas_desde_rentabilidades
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
+from src.auth import logout_user, page_init_and_auth
 
-from src.auth import logout_user
-
-initialize_session_state()
+auth, db = page_init_and_auth()
 
 # --- PROTECCIÓN DE LA PÁGINA ---
 if not st.session_state.get("logged_in", False):
@@ -35,7 +34,6 @@ st.set_page_config(
     layout="wide"
 )
 
-initialize_session_state()
 localS = LocalStorage() # <-- Inicializamos LocalStorage
 
 # --- Lógica de la Página (sin cambios) ---
@@ -128,7 +126,7 @@ with col2_sort:
 df_sorted = df_filtered.sort_values(by=sort_by_col, ascending=sort_ascending, na_position='last')
 
 # --- CABECERA ACTUALIZADA ---
-header_cols = st.columns((3, 1.5, 1, 1, 1, 1, 1.5, 1, 1.5, 1.5, 1.5))
+header_cols = st.columns((3, 1.5, 1, 1, 1, 1, 1.5, 1, 1.5, 1.5))
 header_cols[0].markdown("**Nombre**")
 header_cols[1].markdown("**ISIN**")
 header_cols[2].markdown(f"**Rent. (%)**")
@@ -137,9 +135,8 @@ header_cols[4].markdown("**Sharpe**")
 header_cols[5].markdown("**TER (%)**")
 header_cols[6].markdown("**Gestora**")
 header_cols[7].markdown("**SRRI**")
-header_cols[8].markdown("**Refrescar**")
-header_cols[9].markdown("**Añadir Cartera**")
-header_cols[10].markdown("**Comparar**") # <-- NUEVA COLUMNA
+header_cols[8].markdown("**Añadir Cartera**")
+header_cols[9].markdown("**Comparar**") # <-- NUEVA COLUMNA
 
 # --- LÓGICA PARA LEER LA COMPARACIÓN ACTUAL ---
 saved_comp_json = localS.getItem('saved_comparison')
@@ -157,7 +154,7 @@ if active_portfolio_name:
 
 # --- BUCLE DE VISUALIZACIÓN MODIFICADO ---
 for index, row in df_sorted.iterrows():
-    cols = st.columns((3, 1.5, 1, 1, 1, 1, 1.5, 1, 1.5, 1.5, 1.5))
+    cols = st.columns((3, 1.5, 1, 1, 1, 1, 1.5, 1, 1.5, 1.5))
     isin_actual = row.get('isin')
 
     with cols[0]:
@@ -176,13 +173,8 @@ for index, row in df_sorted.iterrows():
         st.write(row.get('gestora', 'N/A'))
     with cols[7]:
         st.write(f"{row.get('srri', 'N/A')}")
+
     with cols[8]:
-        if st.button("🔄", key=f"update_explorer_{isin_actual}", help="Refrescar datos"):
-            update_fund_details_in_config(isin_actual)
-            st.session_state.force_update_isin = isin_actual
-            st.cache_data.clear()
-            st.rerun()
-    with cols[9]:
         if isin_actual in isins_in_active_portfolio:
             st.success("✔️")
         else:
@@ -194,7 +186,7 @@ for index, row in df_sorted.iterrows():
                     st.warning("Crea o selecciona una cartera primero.")
 
     # --- NUEVA LÓGICA PARA EL BOTÓN DE COMPARAR ---
-    with cols[10]:
+    with cols[9]:
         if isin_actual in fondos_en_comparador:
             st.success("✔️ añadido")
         else:

@@ -2,13 +2,12 @@
 
 import streamlit as st
 from src.state import initialize_session_state
-from src.auth import initialize_firebase, login_user, signup_user, logout_user
+from src.auth import login_user, signup_user, logout_user, page_init_and_auth
+
 
 st.set_page_config(page_title="Analizador de Carteras", page_icon="📊", layout="wide")
 
-# --- INICIALIZACIÓN ---
-initialize_session_state()
-auth, db = initialize_firebase()
+auth, db = page_init_and_auth()
 
 # --- LÓGICA DE LA PÁGINA ---
 
@@ -30,7 +29,7 @@ if not st.session_state.get("logged_in", False):
     else:
         if st.button("Login"):
             if auth:
-                 login_user(auth, db, email, password)
+                 login_user(auth, db, email, password, localS)
 else:
     # --- PÁGINA DE BIENVENIDA UNA VEZ LOGUEADO ---
     st.title(f"📊 Bienvenido, {st.session_state.user_info.get('email', '')}!")

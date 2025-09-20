@@ -1,5 +1,3 @@
-# src/data_manager.py
-
 import pandas as pd
 import mstarpy as ms
 from pathlib import Path
@@ -9,12 +7,10 @@ import json
 import time
 import random
 
-
-# En src/data_manager.py
-
 class DataManager:
     """
     Gestiona la obtención y el cacheo local de los datos NAV de los fondos.
+    En la app, solo lee. En el worker, descarga.
     """
     def __init__(self, data_dir: str = "fondos_data"):
         self.data_dir = Path(data_dir)
@@ -24,15 +20,14 @@ class DataManager:
         self.api_call_made_in_this_run = False
 
     def _download_nav(self, isin: str, start_date: date, end_date: date) -> pd.DataFrame | None:
-        """Descarga datos de Morningstar para un ISIN y un rango de fechas."""
-        # --- LÓGICA DE PAUSA INTELIGENTE ---
-        # Si ya hemos hecho una llamada a la API en esta ejecución, esperamos.
+        """
+        Descarga datos de Morningstar. ESTE MÉTODO AHORA SOLO DEBERÍA SER USADO POR EL WORKER.
+        """
         if self.api_call_made_in_this_run:
             pausa = random.uniform(8, 10)
             time.sleep(pausa)
-
         self.api_call_made_in_this_run = True
-
+        
         try:
             fund = ms.Funds(isin)
             nav_data = pd.DataFrame(fund.nav(start_date=start_date, end_date=end_date))
@@ -43,39 +38,27 @@ class DataManager:
             df["date"] = pd.to_datetime(df["date"])
             return df.sort_values("date").drop_duplicates(subset="date")
         except Exception as e:
-            st.error(f"Error descargando {isin}: {e}")
-            
+            # En lugar de st.error, que es para la UI, imprimimos el error en la consola.
+            print(f"Error descargando {isin}: {e}")
             return None
 
-    def get_fund_nav(self, isin: str, force_to_today: bool = False) -> pd.DataFrame | None:
+    def get_fund_nav(self, isin: str) -> pd.DataFrame | None:
+        """
+        Función simplificada: solo lee el fichero CSV. No descarga nada.
+        """
         file_path = self.data_dir / f"{isin}.csv"
-        df = None
+        
         if file_path.exists():
             try:
                 df = pd.read_csv(file_path, parse_dates=["date"], index_col="date")
-                df.index = pd.to_datetime(df.index)
-            except Exception:
-                df = None
-        
-        if not force_to_today and df is not None and not df.empty:
-            last_date = df.index.max().date()
-            if last_date >= self.today - timedelta(days=self.recency_threshold_days):
-                # --- MENSAJE ELIMINADO ---
-                # st.sidebar.info(f"📂 Datos de {isin} recientes. Usando caché.")
                 return df
-
-        start_update_date = date(1900, 1, 1)
-        if df is not None and not df.empty:
-            start_update_date = df.index.max().date() + timedelta(days=1)
-        
-        if start_update_date <= self.today:
-            nuevos_datos = self._download_nav(isin, start_date=start_update_date, end_date=self.today)
-            if nuevos_datos is not None and not nuevos_datos.empty:
-                nuevos_datos.set_index('date', inplace=True)
-                df = pd.concat([df, nuevos_datos]) if df is not None else nuevos_datos
-                df = df[~df.index.duplicated(keep='last')].sort_index()
-                df.to_csv(file_path, index=True)
-        return df
+            except Exception as e:
+                st.error(f"Error al leer el fichero de datos para {isin}: {e}")
+                return None
+        else:
+            # Si el worker aún no ha creado el fichero, lo indicamos.
+            st.warning(f"Aún no hay datos locales para {isin}. El worker los descargará en la próxima ejecución.")
+            return None
 
 
 def filtrar_por_horizonte(df: pd.DataFrame, horizonte: str) -> pd.DataFrame:
