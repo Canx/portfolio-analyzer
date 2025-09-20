@@ -17,9 +17,12 @@ from src.state import initialize_session_state
 from src.optimizer import optimize_portfolio
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
 
-from src.auth import logout_user
+from src.database import save_user_data
+from src.auth import initialize_firebase, logout_user
 
 initialize_session_state()
+auth, db = initialize_firebase()
+
 
 # --- PROTECCIÓN DE LA PÁGINA ---
 if not st.session_state.get("logged_in", False):
@@ -33,17 +36,6 @@ with st.sidebar:
         logout_user()
         st.switch_page("app.py")
 
-# --- INICIALIZAMOS EL ESTADO AL PRINCIPIO DE LA PÁGINA ---
-initialize_session_state()
-
-
-# --- FUNCIÓN SAVE STATE (Adaptada para la nueva estructura) ---
-def save_state_to_browser():
-    localS = LocalStorage()
-    # Guardamos el diccionario completo de carteras
-    localS.setItem(
-        "mis_carteras", json.dumps(st.session_state.carteras), key="storage_carteras"
-    )
 
 def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
     """
@@ -524,7 +516,7 @@ data_manager = DataManager()
 horizonte, run_optimization, modelo_seleccionado, risk_measure = render_sidebar(
     mapa_nombre_isin, mapa_isin_nombre
 )
-save_state_to_browser()
+
 
 # 3. VERIFICAR SI HAY UNA CARTERA ACTIVA
 if not st.session_state.get("cartera_activa") or not st.session_state.carteras.get(
@@ -647,3 +639,33 @@ def load_all_navs(_data_manager, isines: tuple, force_update_isin: str = None):
     if not all_navs:
         return pd.DataFrame()
     return pd.concat(all_navs, axis=1).ffill()
+
+
+if 'carteras' in st.session_state and 'user_info' in st.session_state and st.session_state.user_info:
+    
+    # --- INICIO DEL BLOQUE DE DEPURACIÓN ---
+    # Este bloque nos ayudará a ver qué está pasando.
+    with st.expander("🐞 Datos de Depuración (Puedes ignorar esto si todo va bien)"):
+        st.write("Contenido de `st.session_state.carteras` que se intenta guardar:")
+        
+        # 1. Mostramos los datos en formato legible
+        st.json(st.session_state.carteras)
+        
+        # 2. Hacemos una prueba para ver si los datos se pueden convertir a JSON
+        try:
+            import json
+            # Intentamos la conversión. Si falla, saltará una excepción.
+            json_data_to_save = json.dumps(st.session_state.carteras)
+            st.success("Prueba superada: Los datos se pueden convertir a JSON correctamente.")
+        except TypeError as e:
+            st.error("¡Hemos encontrado la causa del error!")
+            st.error(f"Los datos de tus carteras contienen un valor que no es compatible con JSON.")
+            st.error(f"Detalle técnico del error: {e}")
+            st.warning("Esto suele ocurrir si algún peso de un fondo es un valor no numérico (como NaN). Por favor, revisa la composición de tus carteras en la barra lateral y asegúrate de que todos los pesos son números enteros (ej. 20, 0, 50).")
+            # Detenemos la ejecución para evitar el error de guardado real
+            st.stop()
+    # --- FIN DEL BLOQUE DE DEPURACIÓN ---
+
+    # Llamada original para guardar los datos
+    save_user_data(db, st.session_state.user_info, "carteras", st.session_state.carteras)
+
