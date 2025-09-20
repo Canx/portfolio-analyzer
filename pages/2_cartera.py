@@ -17,6 +17,22 @@ from src.state import initialize_session_state
 from src.optimizer import optimize_portfolio
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
 
+from src.auth import logout_user
+
+initialize_session_state()
+
+# --- PROTECCIÓN DE LA PÁGINA ---
+if not st.session_state.get("logged_in", False):
+    st.error("Debes iniciar sesión para acceder a esta página.")
+    st.stop()
+
+# --- BOTÓN DE LOGOUT EN LA SIDEBAR ---
+with st.sidebar:
+    st.write(f"Usuario: {st.session_state.user_info.get('email')}")
+    if st.button("Cerrar Sesión"):
+        logout_user()
+        st.switch_page("app.py")
+
 # --- INICIALIZAMOS EL ESTADO AL PRINCIPIO DE LA PÁGINA ---
 initialize_session_state()
 

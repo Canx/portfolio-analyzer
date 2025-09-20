@@ -9,3 +9,4 @@ scipy
 plotly
 Riskfolio-Lib
 pytest
+Pyrebase4
