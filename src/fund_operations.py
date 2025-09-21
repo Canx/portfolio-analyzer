@@ -12,13 +12,15 @@ def download_nav_data(isin: str, start_date: date, end_date: date) -> pd.DataFra
     """
     Descarga datos de Morningstar con una lógica de reintentos y espera exponencial.
     """
-    max_retries = 4
+    max_retries = 0
     base_delay = 10
 
     for attempt in range(max_retries):
         try:
-            if attempt == 0:
-                time.sleep(random.uniform(3, 5))
+            if attempt > 0:
+                delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1)
+                print(f"  -> Error de API (intento {attempt + 1}/{max_retries}). Reintentando en {delay:.0f} segundos...")
+                time.sleep(delay)
             
             fund = ms.Funds(isin)
             nav_data = pd.DataFrame(fund.nav(start_date=start_date, end_date=end_date))
@@ -33,22 +35,18 @@ def download_nav_data(isin: str, start_date: date, end_date: date) -> pd.DataFra
         except Exception as e:
             error_message = str(e).lower()
             if "401" in error_message or "unauthorized" in error_message or "timeout" in error_message:
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
-                    print(f"  -> Error de API (intento {attempt + 1}/{max_retries}). Reintentando en {delay:.0f} segundos...")
-                    time.sleep(delay)
-                else:
-                    print(f"  -> ❌ Error: La API ha fallado después de {max_retries} intentos. El ISIN no se actualizará.")
+                if attempt == max_retries - 1:
+                    print(f"  -> ❌ Error: La API ha fallado después de {max_retries} intentos.")
                     return None
             else:
                 print(f"  -> ❌ Error no recuperable al descargar {isin}: {e}")
                 return None
-    
     return None
 
-def update_fund_csv(isin: str, data_dir: str = "fondos_data"):
+def update_fund_csv(isin: str, data_dir: str = "fondos_data") -> bool:
     """
-    Función principal para el worker. Comprueba si los datos son recientes antes de intentar descargar.
+    Función principal para el worker.
+    Devuelve True si ha intentado una descarga, False si no.
     """
     data_dir_path = Path(data_dir)
     data_dir_path.mkdir(exist_ok=True)
@@ -66,21 +64,17 @@ def update_fund_csv(isin: str, data_dir: str = "fondos_data"):
             
     today = date.today()
 
-    # --- LÓGICA DE COMPROBACIÓN MEJORADA ---
-    # Si tenemos datos y son de menos de 5 días de antigüedad (hoy o ayer),
-    # consideramos que el fondo está actualizado y no hacemos nada.
     if last_date_in_csv and (today - last_date_in_csv).days < 5:
         print(f"  -> Datos recientes (última fecha: {last_date_in_csv}). No se necesita actualizar. Saltando.")
-        return True
+        return False # <-- Devolvemos False porque no hemos hecho llamada
 
     start_update_date = date(1900, 1, 1)
     if last_date_in_csv:
         start_update_date = last_date_in_csv + timedelta(days=1)
     
-    # Si la fecha de inicio es futura, tampoco hacemos nada
     if start_update_date > today:
-        print(f"  -> El fichero CSV ya está actualizado (fecha inicio: {start_update_date}). Saltando.")
-        return True
+        print(f"  -> El fichero CSV ya está actualizado. Saltando.")
+        return False # <-- Devolvemos False
 
     print(f"  -> Buscando datos desde {start_update_date} hasta {today}...")
     nuevos_datos = download_nav_data(isin, start_date=start_update_date, end_date=today)
@@ -94,4 +88,4 @@ def update_fund_csv(isin: str, data_dir: str = "fondos_data"):
     else:
         print("  -> No se encontraron nuevos datos.")
     
-    return True
+    return True # <-- Devolvemos True porque hemos intentado una descarga

@@ -10,8 +10,6 @@ warnings.filterwarnings("ignore")
 def optimize_portfolio(daily_returns: pd.DataFrame, model: str = 'HRP', risk_measure: str = 'MV', target_return: float = 0.0) -> pd.Series | None:
     """
     Función definitiva para optimizar una cartera usando Riskfolio-Lib.
-    Utiliza la clase correcta (Portfolio o HCPortfolio) y los parámetros
-    correctos para el modelo de optimización.
     """
     if daily_returns.empty or len(daily_returns) < 2:
         return None
@@ -27,7 +25,8 @@ def optimize_portfolio(daily_returns: pd.DataFrame, model: str = 'HRP', risk_mea
                 linkage='ward'
             )
         
-        elif model in ['MV', 'MSR', 'TARGET_RET']:
+        # --- BLOQUE MODIFICADO ---
+        elif model in ['MV', 'MSR', 'MSoR']: # <-- Añadimos el nuevo modelo 'MSoR'
             port = rp.Portfolio(returns=daily_returns)
             port.assets_stats(method_mu='hist', method_cov='ledoit')
             
@@ -44,14 +43,13 @@ def optimize_portfolio(daily_returns: pd.DataFrame, model: str = 'HRP', risk_mea
                     obj='Sharpe',
                     rf=0.0
                 )
-            elif model == 'TARGET_RET':
-                # Riskfolio espera el retorno objetivo anualizado y en formato decimal
-                target_return_decimal_ann = target_return / 100
+            # --- NUEVA OPCIÓN DE OPTIMIZACIÓN ---
+            elif model == 'MSoR': # MSoR = Max Sortino Ratio
                 weights_df = port.optimization(
                     model='Classic',
-                    rm='MV',           # Minimizamos la volatilidad
-                    obj='MinRisk',      # El objetivo es minimizar el riesgo
-                    t_ret=target_return_decimal_ann # Pasamos el retorno objetivo
+                    rm='MSV',        # <-- Usamos Semi-Varianza como medida de riesgo
+                    obj='Sharpe',    # <-- Maximizamos el ratio (Rentabilidad / Riesgo)
+                    rf=0.0
                 )
         
         else:

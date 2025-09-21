@@ -195,7 +195,7 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
             st.subheader("⚖️ Optimización")
 
             # --- SECCIÓN MODIFICADA ---
-            opciones_optimizacion = ["MSR", "MV", "HRP"] # Añadimos el nuevo modelo
+            opciones_optimizacion = ["MSR", "MSoR", "MV", "HRP"] # <-- Añadimos 'MSoR'
             
             modelo_optimización = st.selectbox(
                 "Selecciona un modelo",
@@ -203,8 +203,9 @@ def render_sidebar(mapa_nombre_isin, mapa_isin_nombre):
                 index=0,
                 format_func=lambda x: {
                     "MSR": "Máximo Ratio de Sharpe",
+                    "MSoR": "Máximo Ratio de Sortino", # <-- Nueva etiqueta
                     "MV": "Mínima Volatilidad",
-                    "HRP": "Hierarchical Risk Parity"   
+                    "HRP": "Hierarchical Risk Parity"
                 }[x],
                 key=f"model_{st.session_state.cartera_activa}"
             )
