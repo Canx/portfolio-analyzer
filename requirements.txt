@@ -10,3 +10,4 @@ plotly
 Riskfolio-Lib
 pytest
 Pyrebase4
+playwright
