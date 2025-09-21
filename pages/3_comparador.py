@@ -148,19 +148,35 @@ for isin in fondos_seleccionados_isines:
         navs_a_graficar[nombre_display] = portfolio_obj.nav
 
 # --- Visualización de Resultados ---
+# --- Visualización de Resultados ---
 if lista_metricas:
     st.subheader("📈 Tabla Comparativa de Métricas")
     df_comparativa = pd.DataFrame(lista_metricas)
+    
+    # --- BLOQUE MODIFICADO ---
     df_display = df_comparativa.rename(columns={
-        "nombre": "Activo", "annualized_return_%": "Rent. Anual (%)",
-        "volatility_ann_%": "Volatilidad (%)", "sharpe_ann": "Ratio Sharpe",
+        "nombre": "Activo", 
+        "annualized_return_%": "Rent. Anual (%)",
+        "volatility_ann_%": "Volatilidad (%)", 
+        "sharpe_ann": "Ratio Sharpe",
+        "sortino_ann": "Ratio Sortino", # <-- NUEVA ETIQUETA
         "max_drawdown_%": "Caída Máxima (%)"
-    }).set_index("Activo")[["Rent. Anual (%)", "Volatilidad (%)", "Ratio Sharpe", "Caída Máxima (%)"]]
+    }).set_index("Activo")[
+        [
+            "Rent. Anual (%)", 
+            "Volatilidad (%)", 
+            "Ratio Sharpe", 
+            "Ratio Sortino", # <-- NUEVA COLUMNA
+            "Caída Máxima (%)"
+        ]
+    ]
+    
+    # Añadimos la nueva columna al coloreado y la opción de expandir
     st.dataframe(
         df_display.style.format("{:.2f}")
-                  .background_gradient(cmap='RdYlGn', subset=['Rent. Anual (%)', 'Ratio Sharpe', 'Caída Máxima (%)'])
-                  # --- LÍNEA CORREGIDA ---
-                  .background_gradient(cmap='RdYlGn_r', subset=['Volatilidad (%)'])
+                  .background_gradient(cmap='RdYlGn', subset=['Rent. Anual (%)', 'Ratio Sharpe', 'Ratio Sortino', 'Caída Máxima (%)'])
+                  .background_gradient(cmap='RdYlGn_r', subset=['Volatilidad (%)']),
+        use_container_width=True
     )
 
 st.markdown("---")
