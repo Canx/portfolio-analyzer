@@ -29,7 +29,7 @@ if not st.session_state.get("logged_in", False):
     else:
         if st.button("Login"):
             if auth:
-                 login_user(auth, db, email, password, localS)
+                 login_user(auth, db, email, password)
 else:
     # --- PÁGINA DE BIENVENIDA UNA VEZ LOGUEADO ---
     st.title(f"📊 Bienvenido, {st.session_state.user_info.get('email', '')}!")
