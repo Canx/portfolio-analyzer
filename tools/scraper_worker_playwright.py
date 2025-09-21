@@ -1,4 +1,7 @@
-# scraper_worker_playwright.py
+import sys
+import os
+# Añadimos el directorio raíz del proyecto al path de Python
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import json
 import time
