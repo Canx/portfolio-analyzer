@@ -5,15 +5,16 @@ import pandas as pd
 from src.auth import page_init_and_auth, logout_user
 from src.database import save_user_data
 from src.portfolio import Portfolio
-from src.utils import load_all_navs, load_config
+from src.utils import load_all_navs # Ya no importamos load_config
 from src.data_manager import DataManager, filtrar_por_horizonte
 from src.metrics import calcular_metricas_desde_rentabilidades
 from src.optimizer import optimize_portfolio
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
+from src.utils import load_funds_from_db, load_all_navs
 import plotly.express as px
 import plotly.graph_objects as go
 
-def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
+def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre, horizonte):
     """
     Renderiza el contenido principal.
     Añade una comprobación para mostrar un aviso si no hay suficientes datos para los gráficos.
@@ -43,12 +44,12 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
         st.plotly_chart(fig_pie, use_container_width=True)
 
     # Tabla de Métricas
-    st.subheader(f"📑 Métricas para el horizonte: {st.session_state.horizonte}")
+    st.subheader(f"📑 Métricas para el horizonte: {horizonte}")
     if not df_metrics.empty:
         # --- BLOQUE MODIFICADO ---
         df_display = df_metrics.rename(
             columns={
-                "nombre": "Nombre",
+                "name": "Nombre",
                 "annualized_return_%": "Rent. Anual (%)",
                 "volatility_ann_%": "Volatilidad Anual (%)",
                 "sharpe_ann": "Ratio Sharpe",
@@ -64,6 +65,8 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
                 "Caída Máxima (%)",
             ]
         ]
+
+        df_display = df_display[~df_display.index.duplicated(keep='first')]
         
         # Añadimos el nuevo ratio al coloreado de la tabla
         st.dataframe(
@@ -143,17 +146,17 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
         # Gráfico de Riesgo vs. Retorno
         if not df_metrics.empty:
             st.subheader("🎯 Riesgo vs. Retorno")
-            fondos_metrics = df_metrics[~df_metrics["nombre"].str.startswith("💼")]
+            fondos_metrics = df_metrics[~df_metrics["name"].str.startswith("💼")]
             fig_risk = px.scatter(
                 fondos_metrics,
                 x="volatility_ann_%",
                 y="annualized_return_%",
-                text="nombre",
-                hover_name="nombre",
+                text="name",
+                hover_name="name",
                 title="Riesgo vs. Retorno de los Fondos",
             )
             fig_risk.update_traces(textposition="top center")
-            cartera_metrics = df_metrics[df_metrics["nombre"].str.startswith("💼")]
+            cartera_metrics = df_metrics[df_metrics["name"].str.startswith("💼")]
             if not cartera_metrics.empty:
                 fig_risk.add_trace(
                     go.Scatter(
@@ -161,7 +164,7 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
                         y=cartera_metrics["annualized_return_%"],
                         mode="markers",
                         marker=dict(color="red", size=15, symbol="star"),
-                        name=cartera_metrics.iloc[0]["nombre"],
+                        name=cartera_metrics.iloc[0]["name"],
                     )
                 )
             fig_risk.update_layout(
@@ -192,7 +195,6 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre):
                                        color_continuous_scale='RdBu_r', range_color=[-1, 1],
                                        title="Matriz de Correlación de la Cartera Activa")
                 st.plotly_chart(fig_corr, use_container_width=True)
-                
 
 # --- INICIALIZACIÓN Y PROTECCIÓN ---
 auth, db = page_init_and_auth()
@@ -214,10 +216,11 @@ st.title(f"📈 Análisis de: {cartera_activa_nombre}")
 
 # --- RENDERIZADO DE LA SIDEBAR DE ANÁLISIS ---
 def render_analysis_sidebar(mapa_nombre_isin, mapa_isin_nombre):
+    # (Esta función no necesita grandes cambios, ya que usa los diccionarios)
     run_optimization = False
     modelo_seleccionado = None
-    risk_measure = 'MV' # Valor por defecto
-    target_return = 0.0 # Valor por defecto
+    risk_measure = 'MV'
+    target_return = 0.0
 
     with st.sidebar:
         st.write(f"Usuario: {st.session_state.user_info.get('email')}")
@@ -231,12 +234,11 @@ def render_analysis_sidebar(mapa_nombre_isin, mapa_isin_nombre):
         st.markdown("---")
         
         st.header("Configuración del Análisis")
-        horizonte = st.selectbox("Horizonte temporal", HORIZONTE_OPCIONES, index=HORIZONTE_DEFAULT_INDEX, key="horizonte")
+        horizonte = st.selectbox("Horizonte temporal", HORIZONTE_OPCIONES, index=HORIZONTE_DEFAULT_INDEX, key="horizonte_detalle")
         
         st.header(f"💼 Composición de '{cartera_activa_nombre}'")
         pesos_actuales = st.session_state.carteras[cartera_activa_nombre]['pesos']
         
-        # --- TODA LA LÓGICA DE PONDERACIÓN ESTÁ AQUÍ ---
         candidatos = [n for n in mapa_nombre_isin.keys() if mapa_nombre_isin[n] not in pesos_actuales.keys()]
         add_sel = st.selectbox("Añadir fondo a la cartera", ["—"] + candidatos, index=0)
         if add_sel != "—" and st.button("➕ Añadir"):
@@ -252,14 +254,14 @@ def render_analysis_sidebar(mapa_nombre_isin, mapa_isin_nombre):
                 if nuevo_peso != pesos_actuales[isin]:
                     pesos_actuales[isin] = nuevo_peso
             with col_del:
-                if st.button("🗑️", key=f"remove_{isin}", help="Eliminar fondo de la cartera"):
+                if st.button("🗑️", key=f"remove_{isin}", help="Eliminar fondo"):
                     del pesos_actuales[isin]
                     st.rerun()
 
         if pesos_actuales:
             total_peso = sum(pesos_actuales.values())
             st.metric("Suma Total", f"{total_peso}%")
-            if total_peso != 100: st.error(f"⚠️ La suma debe ser 100%. Actualmente es {total_peso}%.")
+            if total_peso != 100: st.error(f"⚠️ La suma debe ser 100%.")
         
         st.markdown("---")
         st.subheader("⚖️ Optimización")
@@ -270,42 +272,38 @@ def render_analysis_sidebar(mapa_nombre_isin, mapa_isin_nombre):
         else:
             st.info("La optimización es una funcionalidad Premium.")
             if st.button("✨ Mejorar a Premium"):
-                st.switch_page("pages/4_cuenta.py")
+                st.switch_page("pages/4_Mi_Cuenta.py")
                 
     return horizonte, run_optimization, modelo_seleccionado, risk_measure, target_return
 
+# --- FLUJO PRINCIPAL ---
 
-# --- FLUJO PRINCIPAL (muy similar al que tenías) ---
-fondos_config = load_config()
-mapa_isin_nombre = {f["isin"]: f["nombre"] for f in fondos_config}
-mapa_nombre_isin = {f"{f['nombre']} ({f['isin']})": f["isin"] for f in fondos_config}
-data_manager = DataManager()
-
-horizonte, run_optimization, modelo_seleccionado, risk_measure, target_return = render_analysis_sidebar(mapa_nombre_isin, mapa_isin_nombre)
-
-# 3. VERIFICAR SI HAY UNA CARTERA ACTIVA
-if not st.session_state.get("cartera_activa") or not st.session_state.carteras.get(
-    st.session_state.cartera_activa
-):
-    st.info(
-        "⬅️ Por favor, crea o selecciona una cartera en la barra lateral para empezar el análisis."
-    )
+# 1. CARGAR CATÁLOGO DESDE LA BASE DE DATOS
+df_catalogo = load_funds_from_db()
+if df_catalogo.empty:
+    st.error("No se pudo cargar el catálogo de fondos desde la base de datos.")
     st.stop()
 
+# 2. CREAR DICCIONARIOS DE MAPEADO (usando la columna 'name')
+mapa_isin_nombre = pd.Series(df_catalogo['name'].values, index=df_catalogo['isin']).to_dict()
+mapa_nombre_isin = {f"{row['name']} ({row['isin']})": row['isin'] for index, row in df_catalogo.iterrows()}
+data_manager = DataManager()
+
+# 3. RENDERIZAR SIDEBAR
+horizonte, run_optimization, modelo_seleccionado, risk_measure, target_return = render_analysis_sidebar(mapa_nombre_isin, mapa_isin_nombre)
+
 # 4. OBTENER DATOS DE LA CARTERA ACTIVA
-cartera_activa_nombre = st.session_state.cartera_activa
-cartera_activa_data = st.session_state.carteras[cartera_activa_nombre]
-pesos_cartera_activa = cartera_activa_data["pesos"]
+pesos_cartera_activa = st.session_state.carteras[cartera_activa_nombre]["pesos"]
 isines_a_cargar = tuple(pesos_cartera_activa.keys())
 
 if not isines_a_cargar:
-    st.warning("Tu cartera está vacía. Añade fondos desde la barra lateral.")
+    st.warning("Esta cartera está vacía. Añade fondos desde la barra lateral.")
     st.stop()
 
-# 5. CARGA DE DATOS Y PROCESADO
-with st.spinner(f"Cargando datos de precios para {len(isines_a_cargar)} fondos en la cartera..."):
-    all_navs_df = load_all_navs(data_manager, isines_a_cargar)
+# 5. CARGA DE DATOS DE PRECIOS
+all_navs_df = load_all_navs(data_manager, isines_a_cargar)
 if all_navs_df.empty:
+    st.warning("No se encontraron datos de precios para los fondos de esta cartera.")
     st.stop()
 
 filtered_navs = filtrar_por_horizonte(all_navs_df, horizonte)
@@ -335,59 +333,70 @@ if run_optimization and not daily_returns.empty:
     else:
         st.error("No se pudo optimizar la cartera con los parámetros seleccionados.")
 
-# --- NUEVO: CÁLCULO DEL TER PONDERADO ---
 if pesos_cartera_activa:
+    # 1. Creamos un "mapa" de ISIN -> TER para una búsqueda ultra-rápida.
+    #    Esto es mucho más eficiente que recorrer una lista en cada iteración.
+    ter_map = pd.Series(df_catalogo['ter'].values, index=df_catalogo['isin']).to_dict()
+
     ter_ponderado = 0
     for isin, peso in pesos_cartera_activa.items():
-        # Buscamos el TER del fondo en la configuración
-        ter_fondo = next((f.get('ter', 0) for f in fondos_config if f.get('isin') == isin), 0)
-        # Nos aseguramos de que el TER sea un número
-        try:
-            ter_numerico = float(ter_fondo)
-        except (ValueError, TypeError):
-            ter_numerico = 0
+        # Buscamos el TER del fondo directamente en nuestro mapa
+        ter_fondo = ter_map.get(isin, 0)
+        
+        # Nos aseguramos de que el TER sea un número (si es nulo, usamos 0)
+        ter_numerico = pd.to_numeric(ter_fondo, errors='coerce')
+        ter_numerico = 0 if pd.isna(ter_numerico) else ter_numerico
         
         ter_ponderado += (peso / 100) * ter_numerico
     
-    # Mostramos el resultado en una métrica
     st.metric("Costo Total de la Cartera (TER Ponderado)", f"{ter_ponderado:.2f}%")
     st.markdown("---")
 
-# 7. CÁLCULO DE MÉTRICAS Y CARTERA
-mapa_datos_fondos = {f["isin"]: f for f in fondos_config}
+# --- CÁLCULO DE MÉTRICAS Y CARTERA (BLOQUE CORREGIDO) ---
+
+# 1. Creamos el mapa de datos de fondos a partir del catálogo
+mapa_datos_fondos = df_catalogo.set_index('isin').to_dict('index')
 metricas = []
+
+# 2. Calculamos las métricas para cada fondo individual
 for isin in daily_returns.columns:
     m = calcular_metricas_desde_rentabilidades(daily_returns[isin])
     datos_fondo = mapa_datos_fondos.get(isin, {})
     m.update(datos_fondo)
     metricas.append(m)
+
+# 3. Creamos el DataFrame de métricas
 df_metrics = pd.DataFrame(metricas)
 
+# --- SOLUCIÓN CLAVE ---
+# 4. Nos aseguramos de que la columna 'isin' exista, incluso si el DataFrame está vacío
+if 'isin' not in df_metrics.columns:
+    df_metrics['isin'] = pd.Series(dtype='str')
+
+# 5. Calculamos las métricas de la cartera y las añadimos a la tabla
 portfolio = Portfolio(filtered_navs, pesos_cartera_activa)
 portfolio_metrics = {}
 if portfolio and portfolio.nav is not None:
     metricas_cartera = portfolio.calculate_metrics()
-    metricas_cartera["nombre"] = f"💼 {cartera_activa_nombre}"
+    metricas_cartera["name"] = f"💼 {cartera_activa_nombre}"
     portfolio_metrics = metricas_cartera
     df_metrics = pd.concat([pd.DataFrame([metricas_cartera]), df_metrics], ignore_index=True)
 
-df_metrics["peso_cartera"] = df_metrics["isin"].map(pesos_cartera_activa).fillna(0)
-df_metrics.loc[df_metrics["nombre"].str.startswith("💼"), "peso_cartera"] = 101
-df_metrics = df_metrics.sort_values(by="peso_cartera", ascending=False).drop(
-    columns=["peso_cartera"]
-)
+# 5. Ordenamos la tabla para mostrar la cartera primero
+if not df_metrics.empty:
+    df_metrics["peso_cartera"] = df_metrics["isin"].map(pesos_cartera_activa).fillna(0)
+    
+    # --- LÍNEA CORREGIDA ---
+    # Añadimos .fillna(False) para manejar los nombres nulos de forma segura
+    df_metrics.loc[df_metrics["name"].str.startswith("💼").fillna(False), "peso_cartera"] = 101
+    
+    df_metrics = df_metrics.sort_values(by="peso_cartera", ascending=False).drop(
+        columns=["peso_cartera"]
+    )
 
 # 8. RENDERIZAR RESULTADOS
-render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre)
-
-@st.cache_data
-def load_config(config_file="fondos.json"):
-    path = Path(config_file)
-    if not path.exists():
-        return []
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f).get("fondos", [])
-
+# (Asegúrate de que esta llamada a render_main_content esté después del bloque de cálculo)
+render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre, horizonte)
 
 @st.cache_data
 def load_all_navs(_data_manager, isines: tuple, force_update_isin: str = None):
@@ -402,7 +411,7 @@ def load_all_navs(_data_manager, isines: tuple, force_update_isin: str = None):
         return pd.DataFrame()
     return pd.concat(all_navs, axis=1).ffill()
 
-# Guardado final de datos
+# GUARDADO FINAL DE DATOS
 if 'carteras' in st.session_state and 'user_info' in st.session_state:
     profile_data_to_save = {
         "subscription_plan": st.session_state.user_info.get("subscription_plan", "free"),

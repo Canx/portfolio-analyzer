@@ -6,7 +6,7 @@ from streamlit_local_storage import LocalStorage
 
 # Importaciones de funciones compartidas
 from src.state import initialize_session_state
-from src.utils import load_config, load_all_navs
+from src.utils import load_all_navs, load_funds_from_db
 from src.data_manager import DataManager, filtrar_por_horizonte
 from src.portfolio import Portfolio
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
@@ -40,12 +40,13 @@ st.title("📊 Comparador de Carteras y Fondos")
 st.write("Selecciona carteras y/o fondos individuales para comparar su rendimiento y métricas.")
 
 # --- Carga de datos de configuración ---
-fondos_config = load_config()
-if not fondos_config:
-    st.warning("No hay fondos en el catálogo."); st.stop()
+df_catalogo = load_funds_from_db()
+if df_catalogo.empty:
+    st.error("No se pudo cargar el catálogo de fondos desde la base de datos.")
+    st.stop()
 
-mapa_isin_nombre = {f['isin']: f['nombre'] for f in fondos_config}
-mapa_nombre_isin = {f"{f['nombre']} ({f['isin']})": f['isin'] for f in fondos_config}
+mapa_isin_nombre = pd.Series(df_catalogo['name'].values, index=df_catalogo['isin']).to_dict()
+mapa_nombre_isin = {f"{row['name']} ({row['isin']})": row['isin'] for index, row in df_catalogo.iterrows()}
 nombres_fondos_catalogo = list(mapa_nombre_isin.keys())
 lista_carteras = list(st.session_state.carteras.keys())
 

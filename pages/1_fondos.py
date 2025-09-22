@@ -7,13 +7,6 @@ import json
 from streamlit_local_storage import LocalStorage
 from src.db_connector import get_db_connection
 
-@st.cache_data
-def load_funds_from_db():
-    conn = get_db_connection()
-    df = pd.read_sql("SELECT * FROM funds", conn)
-    conn.close()
-    return df
-
 # --- CONFIGURACIÓN DE PÁGINA (Debe ser lo primero) ---
 st.set_page_config(
     page_title="Explorador de Fondos",
@@ -22,11 +15,11 @@ st.set_page_config(
 )
 
 # Importaciones de funciones compartidas
-from src.utils import load_config, load_all_navs
 from src.data_manager import find_and_add_fund_by_isin, update_fund_details_in_config, DataManager, filtrar_por_horizonte
 from src.metrics import calcular_metricas_desde_rentabilidades
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
 from src.auth import page_init_and_auth, logout_user
+from src.utils import load_funds_from_db, load_all_navs
 
 # --- INICIALIZACIÓN Y PROTECCIÓN ---
 auth, db = page_init_and_auth()

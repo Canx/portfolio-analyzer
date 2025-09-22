@@ -6,6 +6,7 @@ import streamlit as st
 import json
 import time
 import random
+from src.db_connector import get_db_connection
 
 class DataManager:
     """
@@ -44,21 +45,29 @@ class DataManager:
 
     def get_fund_nav(self, isin: str) -> pd.DataFrame | None:
         """
-        Función simplificada: solo lee el fichero CSV. No descarga nada.
+        Obtiene los datos de un fondo consultando la base de datos PostgreSQL.
         """
-        file_path = self.data_dir / f"{isin}.csv"
-        
-        if file_path.exists():
-            try:
-                df = pd.read_csv(file_path, parse_dates=["date"], index_col="date")
-                return df
-            except Exception as e:
-                st.error(f"Error al leer el fichero de datos para {isin}: {e}")
-                return None
-        else:
-            # Si el worker aún no ha creado el fichero, lo indicamos.
-            st.warning(f"Aún no hay datos locales para {isin}. El worker los descargará en la próxima ejecución.")
+        conn = get_db_connection()
+        if not conn:
+            st.error("No se pudo conectar a la base de datos de precios.")
             return None
+        
+        try:
+            # Leemos todos los precios para el ISIN solicitado
+            query = "SELECT date, nav FROM historical_prices WHERE isin = %s ORDER BY date"
+            df = pd.read_sql(query, conn, params=(isin,), index_col="date")
+            
+            if df.empty:
+                st.warning(f"Aún no hay datos históricos para {isin}. El worker los descargará pronto.")
+                return None
+                
+            return df
+        except Exception as e:
+            st.error(f"Error al leer los precios desde la base de datos para {isin}: {e}")
+            return None
+        finally:
+            if conn:
+                conn.close()
 
 
 def filtrar_por_horizonte(df: pd.DataFrame, horizonte: str) -> pd.DataFrame:
