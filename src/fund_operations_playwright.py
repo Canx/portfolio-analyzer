@@ -5,6 +5,8 @@ import pandas as pd
 from pathlib import Path
 from datetime import date, timedelta
 import json
+from src.db_connector import get_db_connection # <-- NUEVA IMPORTACIÓN
+from psycopg2.extras import execute_values # <-- NUEVA IMPORTACIÓN
 
 # ... (la función find_performance_id no cambia) ...
 def find_performance_id(page: Page, isin: str) -> str | None:
@@ -72,15 +74,20 @@ def get_nav_data_with_playwright(page: Page, performance_id: str) -> pd.DataFram
     except Exception as e:
         print(f"  -> ❌ Error al cargar la página del gráfico: {e}")
     
-    # --- LÍNEA CORREGIDA ---
-    # Cambiamos 'page.off' por el nombre correcto: 'page.remove_listener'
     page.remove_listener("response", handle_response)
 
     if timeseries_data and isinstance(timeseries_data, list) and timeseries_data[0].get('series'):
         df = pd.DataFrame(timeseries_data[0]['series'])
-        if 'date' in df.columns and 'nav' in df.columns:
-            df['date'] = pd.to_datetime(df['date'])
-            return df[['date', 'nav']]
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'], errors='coerce')
+        # Aseguramos que solo devolvemos las columnas que nos interesan
+        return_cols = ['date']
+        if 'nav' in df.columns:
+            return_cols.append('nav')
+        
+        # --- CORRECCIÓN SettingWithCopyWarning ---
+        # Devolvemos una copia explícita para evitar la advertencia
+        return df[return_cols].copy()
     
     print("  -> No se pudieron capturar los datos del gráfico.")
     return None
@@ -116,3 +123,134 @@ def update_fund_csv_playwright(page: Page, isin: str, data_dir: str = "fondos_da
     else:
         print(f"  -> ❌ No se pudieron obtener nuevos datos para {isin}.")
         return False
+    
+# --- NUEVA FUNCIÓN ---
+def find_and_add_fund_to_catalog(page: Page, isin: str, config_file: str = "fondos.json"):
+    """
+    Busca los detalles de un fondo por ISIN usando Playwright y, si lo encuentra,
+    lo añade al fichero de catálogo (fondos.json).
+    Devuelve True si tiene éxito, False si no.
+    """
+    found_details = {
+        "performanceID": None,
+        "name": None
+    }
+    
+    def handle_route(route: Route):
+        nonlocal found_details
+        response = route.fetch()
+        try:
+            data = response.json()
+            if data.get('results'):
+                meta = data['results'][0]['meta']
+                fields = data['results'][0]['fields']
+                found_details["performanceID"] = meta.get('performanceID')
+                found_details["name"] = fields.get('name', {}).get('value')
+                print(f"  -> Datos encontrados: {found_details['name']}")
+        except Exception:
+            pass
+        route.fulfill(response=response)
+
+    try:
+        page.route("**/api/v1/es/search/securities**", handle_route)
+        page.goto("https://www.morningstar.es/", wait_until="domcontentloaded", timeout=60000)
+        
+        search_box = page.locator('input[placeholder="Buscar cotizaciones"]')
+        search_box.wait_for(timeout=15000)
+        search_box.fill(isin)
+        page.wait_for_timeout(5000)
+        
+    except Exception as e:
+        print(f"  -> ❌ Error durante la búsqueda del fondo: {e}")
+        return False
+    finally:
+        page.unroute("**/api/v1/es/search/securities**")
+
+    # Si hemos encontrado los detalles, los añadimos al fichero JSON
+    if found_details.get("performanceID") and found_details.get("name"):
+        try:
+            # Leemos el fichero JSON actual
+            config_path = Path(config_file)
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+            else:
+                config_data = {"fondos": []}
+
+            # Añadimos el nuevo fondo con los datos obtenidos y placeholders
+            new_fund = {
+                "isin": isin,
+                "performanceID": found_details["performanceID"],
+                "nombre": found_details["name"],
+                "gestora": "Desconocida", # Estos datos no los podemos obtener fácilmente
+                "ter": None,
+                "srri": None,
+                "domicilio": None
+            }
+            config_data["fondos"].append(new_fund)
+
+            # Guardamos el fichero actualizado
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f, indent=2, ensure_ascii=False)
+            
+            return True
+        except Exception as e:
+            print(f"  -> ❌ Error al guardar en '{config_file}': {e}")
+            return False
+            
+    return False
+
+
+def update_fund_in_db(page: Page, isin: str) -> bool:
+    """
+    Función que orquesta el proceso para un ISIN, guardando los datos en PostgreSQL.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return False
+    
+    try:
+        last_date_in_db = None
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT MAX(date) FROM historical_prices WHERE isin = %s", (isin,))
+                result = cursor.fetchone()
+                if result and result[0]: last_date_in_db = result[0]
+        except Exception:
+            conn.rollback()
+
+        today = date.today()
+        if last_date_in_db and (today - last_date_in_db).days < 2:
+            print(f"  -> Datos recientes (última fecha: {last_date_in_db}). Saltando.")
+            return False
+
+        performance_id = find_performance_id(page, isin)
+        if not performance_id: return False
+            
+        nuevos_datos_df = get_nav_data_with_playwright(page, performance_id)
+        
+        if nuevos_datos_df is not None and not nuevos_datos_df.empty:
+            
+            # Limpiamos los datos malos (donde la fecha o el NAV son nulos)
+            nuevos_datos_df.dropna(subset=['date', 'nav'], inplace=True)
+
+            if nuevos_datos_df.empty:
+                print("  -> No se encontraron nuevos datos válidos tras la limpieza.")
+                return False
+
+            data_to_insert = [
+                (isin, row['date'].date(), row['nav']) 
+                for index, row in nuevos_datos_df.iterrows()
+            ]
+            
+            with conn.cursor() as cursor:
+                execute_values(cursor, "INSERT INTO historical_prices (isin, date, nav) VALUES %s ON CONFLICT (isin, date) DO NOTHING", data_to_insert)
+                conn.commit()
+                print(f"  -> ✅ {cursor.rowcount} nuevos registros de precios insertados.")
+            return True
+        else:
+            print(f"  -> ❌ No se pudieron obtener nuevos datos para {isin}.")
+            return False
+    finally:
+        if conn:
+            conn.close()

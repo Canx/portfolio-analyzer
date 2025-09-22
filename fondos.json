@@ -1,0 +1,375 @@
+{
+  "fondos": [
+    {
+      "isin": "IE00BLP5S460",
+      "nombre": "JupiterMerian Glb Eq AbsRt L € H Acc",
+      "nombre_legal": "JupiterMerian Global Equity Absolute Return Fund L (EUR) Hedged Acc",
+      "gestora": "Jupiter",
+      "ter": 1.56,
+      "fecha_creacion": "2011-11-24T00:00:00",
+      "domicilio": "IRL",
+      "srri": 4
+    },
+    {
+      "isin": "IE00008TZ2E8",
+      "nombre": "Man Dynamic Income D H EUR CAp",
+      "nombre_legal": "Man Funds plc - Man Dynamic Income D H EUR",
+      "gestora": "Man Group",
+      "ter": null,
+      "fecha_creacion": "2023-10-11T00:00:00",
+      "domicilio": "IRL",
+      "srri": 5
+    },
+    {
+      "isin": "LU1663932215",
+      "nombre": "DWS Invest Gold and Prec Mtl Eqs USD TFC",
+      "categoria": "Equity",
+      "ter": null,
+      "nombre_legal": "DWS Invest Gold and Precious Metals Equities USD TFC",
+      "gestora": "DWS",
+      "fecha_creacion": "2017-12-05T00:00:00",
+      "domicilio": "LUX",
+      "srri": 7
+    },
+    {
+      "isin": "LU2416422751",
+      "nombre": "Vontobel Credit Opps HI Hdg EUR Cap",
+      "nombre_legal": "Vontobel Fund - Credit Opportunities HI (hedged) EUR Cap",
+      "gestora": "Vontobel",
+      "ter": null,
+      "fecha_creacion": "2021-12-22T00:00:00",
+      "srri": 5,
+      "domicilio": "LUX"
+    },
+    {
+      "isin": "IE00BFZMJT78",
+      "nombre": "Neuberger Berman Short Dur Er Bd EURIAcc",
+      "nombre_legal": "Neuberger Berman Short Duration Euro Bond Fund Class EUR I Accumulating",
+      "gestora": "Neuberger Berman",
+      "ter": 0.25,
+      "fecha_creacion": "2018-10-31T00:00:00",
+      "domicilio": "IRL",
+      "srri": 3
+    },
+    {
+      "isin": "LU1896847628",
+      "nombre": "Vontobel EM Blend HI H EUR Acc",
+      "nombre_legal": "Vontobel Fund - Emerging Markets Blend HI Hedged EUR Acc",
+      "gestora": "Vontobel",
+      "ter": 0.85,
+      "fecha_creacion": "2018-10-26T00:00:00",
+      "domicilio": "LUX",
+      "srri": 5
+    },
+    {
+      "isin": "ES0146309002",
+      "nombre": "Horos Value Internacional FI",
+      "nombre_legal": "Horos Value Internacional FI",
+      "gestora": "Horos",
+      "ter": 1.88,
+      "fecha_creacion": "2018-05-21T00:00:00",
+      "domicilio": "ESP",
+      "srri": 5
+    },
+    {
+      "isin": "ES0159201013",
+      "nombre": "Magallanes Iberian Equity M FI",
+      "nombre_legal": "Magallanes Iberian Equity M FI",
+      "gestora": "Magallanes",
+      "ter": 1.8,
+      "fecha_creacion": "2015-01-09T00:00:00",
+      "domicilio": "ESP",
+      "srri": 4
+    },
+    {
+      "isin": "IE00B5648R31",
+      "nombre": "Man Jpn CoreAlpha Eq D H EUR",
+      "nombre_legal": "Man Funds plc - Man Japan CoreAlpha Equity D H EUR",
+      "gestora": "Man Group",
+      "ter": 1.7,
+      "fecha_creacion": "2010-03-02T00:00:00",
+      "domicilio": "IRL",
+      "srri": 6
+    },
+    {
+      "isin": "ES0140794001",
+      "nombre": "Gamma Global A FI",
+      "nombre_legal": "Gamma Global A FI",
+      "gestora": "Singular Asset Management",
+      "ter": 1.32,
+      "fecha_creacion": "2021-04-23T00:00:00",
+      "domicilio": "ESP",
+      "srri": 7
+    },
+    {
+      "isin": "ES0121083002",
+      "nombre": "Rolnik Conviction V FI",
+      "nombre_legal": "Rolnik Conviction V FI",
+      "gestora": "Rolnik Capital Owners",
+      "ter": 0.15,
+      "fecha_creacion": "2020-07-03T00:00:00",
+      "domicilio": "ESP",
+      "srri": 7
+    },
+    {
+      "isin": "ES0112231016",
+      "nombre": "Avantage Fund B FI",
+      "nombre_legal": "Avantage Fund B FI",
+      "gestora": "Renta 4",
+      "ter": 0.0,
+      "fecha_creacion": "2021-07-16T00:00:00",
+      "domicilio": "ESP",
+      "srri": 3
+    },
+    {
+      "isin": "IE00BYX5P602",
+      "nombre": "Fidelity MSCI World Index EUR P Acc H",
+      "nombre_legal": "Fidelity MSCI World Index Fund EUR P Acc (Hedged)",
+      "gestora": "Fidelity International",
+      "ter": 0.17,
+      "fecha_creacion": "2018-03-20T00:00:00",
+      "domicilio": "IRL",
+      "srri": 6
+    },
+    {
+      "isin": "IE00BYVJR916",
+      "nombre": "Jupiter Gold & Silver L EUR Acc",
+      "nombre_legal": "Jupiter Gold & Silver Fund L EUR Acc",
+      "gestora": "Jupiter",
+      "ter": 1.75,
+      "fecha_creacion": "2016-07-07T00:00:00",
+      "domicilio": "IRL",
+      "srri": 7
+    },
+    {
+      "isin": "IE00B03HD316",
+      "nombre": "Vanguard Glb Stk Idx € H Acc",
+      "nombre_legal": "Vanguard Global Stock Index Fund EUR Hedged Acc",
+      "gestora": "Vanguard",
+      "ter": 0.18,
+      "fecha_creacion": "2004-11-04T00:00:00",
+      "domicilio": "IRL",
+      "srri": 6
+    },
+    {
+      "isin": "LU0995332854",
+      "nombre": "BGF Emerging Markets Corp Bd I2 EUR H",
+      "nombre_legal": "BlackRock Global Funds - Emerging Markets Corporate Bond Fund I2 EUR Hedged",
+      "gestora": "BlackRock",
+      "ter": 0.76,
+      "fecha_creacion": "2013-12-04T00:00:00",
+      "domicilio": "LUX",
+      "srri": 4
+    },
+    {
+      "isin": "ES0131445142",
+      "nombre": "Gest Bout VIII Inver Value Global Fnd FI",
+      "nombre_legal": "Gest Bout VIII Inver Value Global Fnd FI",
+      "gestora": "Andbank",
+      "ter": 1.15,
+      "fecha_creacion": "2023-09-08T00:00:00",
+      "domicilio": "ESP",
+      "srri": null
+    },
+    {
+      "isin": "IE00BL6KD459",
+      "nombre": "iShares North America Idx (IE) D Acc€H",
+      "nombre_legal": "iShares North America Index Fund (IE) D Acc EUR Hedged",
+      "gestora": "BlackRock",
+      "ter": null,
+      "fecha_creacion": "2021-05-25T00:00:00",
+      "domicilio": "IRL",
+      "srri": 6
+    },
+    {
+      "isin": "IE00BYX5NH74",
+      "nombre": "Fidelity MSCI Japan Index EUR P Acc H",
+      "nombre_legal": "Fidelity MSCI Japan Index Fund EUR P Acc (Hedged)",
+      "gestora": "Fidelity International",
+      "ter": 0.15,
+      "fecha_creacion": "2018-03-20T00:00:00",
+      "domicilio": "IRL",
+      "srri": 6
+    },
+    {
+      "isin": "LU0594300096",
+      "nombre": "Fidelity China Consumer A-Acc-EUR",
+      "nombre_legal": "Fidelity Funds - China Consumer Fund A-Acc-EUR",
+      "gestora": "Fidelity International",
+      "ter": 1.91,
+      "fecha_creacion": "2011-02-23T00:00:00",
+      "domicilio": "LUX",
+      "srri": 7
+    },
+    {
+      "isin": "LU1841614867",
+      "nombre": "Fidelity Global Technology A-Acc-EURH",
+      "nombre_legal": "Fidelity Funds - Global Technology Fund A-Acc-EUR (hedged)",
+      "gestora": "Fidelity International",
+      "ter": 1.89,
+      "fecha_creacion": "2018-07-11T00:00:00",
+      "domicilio": "LUX",
+      "srri": 6
+    },
+    {
+      "isin": "IE0008248803",
+      "nombre": "Vanguard €z Stk Idx € Acc",
+      "nombre_legal": "Vanguard Eurozone Stock Index Fund EUR Acc",
+      "gestora": "Vanguard",
+      "ter": 0.12,
+      "fecha_creacion": "2001-10-25T00:00:00",
+      "domicilio": "IRL",
+      "srri": 6
+    },
+    {
+      "isin": "LU1815002040",
+      "nombre": "UBS MSCI ChinaAllShrsUniv IF EUR A acc",
+      "nombre_legal": "UBS MSCI China All Shares Universal Index Fund EUR A acc",
+      "gestora": "UBS",
+      "ter": 0.38,
+      "fecha_creacion": "2020-10-29T00:00:00",
+      "domicilio": "LUX",
+      "srri": 6
+    },
+    {
+      "isin": "NL0006238131",
+      "nombre": "Robeco Afrika Fonds – EUR E",
+      "nombre_legal": "Robeco Afrika Fonds – EUR E",
+      "gestora": "Robeco",
+      "ter": null,
+      "fecha_creacion": "2008-06-09T00:00:00",
+      "domicilio": "NLD",
+      "srri": 6
+    },
+    {
+      "isin": "IE00B03HD191",
+      "nombre": "Vanguard Glb Stk Idx € Acc",
+      "nombre_legal": "Vanguard Global Stock Index Fund EUR Acc",
+      "gestora": "Vanguard",
+      "ter": 0.18,
+      "fecha_creacion": "2002-12-10T00:00:00",
+      "domicilio": "IRL",
+      "srri": 5
+    },
+    {
+      "isin": "IE00B18GC888",
+      "nombre": "Vanguard Global Bd Idx EUR H Acc",
+      "nombre_legal": "Vanguard Global Bond Index Fund EUR Hedged Acc",
+      "gestora": "Vanguard",
+      "ter": 0.15,
+      "fecha_creacion": "2014-02-27T00:00:00",
+      "domicilio": "IRL",
+      "srri": 3
+    },
+    {
+      "isin": "IE0031786696",
+      "nombre": "Vanguard Em Mkts Stk Idx € Acc",
+      "nombre_legal": "Vanguard Emerging Markets Stock Index Fund EUR Acc",
+      "gestora": "Vanguard",
+      "ter": 0.23,
+      "fecha_creacion": "2014-02-27T00:00:00",
+      "domicilio": "IRL",
+      "srri": 6
+    },
+    {
+      "isin": "IE00B42W4L06",
+      "nombre": "Vanguard Glb Small-Cp Idx € Acc",
+      "nombre_legal": "Vanguard Global Small-Cap Index Fund EUR Acc",
+      "gestora": "Vanguard",
+      "ter": 0.29,
+      "fecha_creacion": "2012-12-11T00:00:00",
+      "domicilio": "IRL",
+      "srri": 6
+    },
+    {
+      "isin": "IE00B83YJG36",
+      "nombre": "iShares Dev Rl Ett Idx (IE) Instl Acc €",
+      "nombre_legal": "iShares Developed Real Estate Index Fund (IE) Institutional Acc EUR",
+      "gestora": "BlackRock",
+      "ter": null,
+      "fecha_creacion": "2013-02-13T00:00:00",
+      "domicilio": "IRL",
+      "srri": 6
+    },
+    {
+      "isin": "FR001400CFA4",
+      "nombre": "Ostrum Credit Ultr Shrt Pls R/C(EUR)",
+      "nombre_legal": "Ostrum Credit Ultra Short Plus R/C (EUR)",
+      "gestora": "Natixis",
+      "ter": null,
+      "fecha_creacion": "2023-02-23T00:00:00",
+      "domicilio": "FRA",
+      "srri": 2
+    },
+    {
+      "isin": "LU1694789451",
+      "nombre": "DNCA Invest Alpha Bonds A EUR",
+      "nombre_legal": "DNCA Invest Alpha Bonds A EUR",
+      "gestora": "Natixis",
+      "ter": null,
+      "fecha_creacion": "2017-12-14T00:00:00",
+      "domicilio": "LUX",
+      "srri": 3
+    },
+    {
+      "isin": "LU0235308482",
+      "nombre": "Alken European Opportunities R",
+      "nombre_legal": "Alken Fund - European Opportunities Class R",
+      "gestora": "AFFM",
+      "ter": 1.85,
+      "fecha_creacion": "2006-01-03T00:00:00",
+      "domicilio": "LUX",
+      "srri": 6
+    },
+    {
+      "isin": "ES0110407105",
+      "nombre": "Gestión Boutique VI Gestivalue Cap A FI",
+      "nombre_legal": "Gestión Boutique VI Gestivalue Cap A FI",
+      "gestora": "Andbank",
+      "ter": 0.0,
+      "fecha_creacion": "2019-05-10T00:00:00",
+      "domicilio": "ESP",
+      "srri": 7
+    },
+    {
+      "isin": "ES0141116030",
+      "nombre": "Hamco Global Value Fund R FI",
+      "nombre_legal": "Hamco Global Value Fund R FI",
+      "gestora": "Andbank",
+      "ter": 2.38,
+      "fecha_creacion": "2019-10-07T00:00:00",
+      "domicilio": "ESP",
+      "srri": 6
+    },
+    {
+      "isin": "LU0803250884",
+      "nombre": "Robeco QI Global Momentum Equities I €",
+      "nombre_legal": "Robeco QI Global Momentum Equities I €",
+      "gestora": "Robeco",
+      "ter": 0.68,
+      "fecha_creacion": "2012-08-21T00:00:00",
+      "domicilio": "LUX",
+      "srri": 6
+    },
+    {
+      "isin": "FR0011170182",
+      "nombre": "Ofi Invest Precious Metals R",
+      "nombre_legal": "Ofi Invest Precious Metals R",
+      "gestora": "Ofi Invest",
+      "ter": 1.51,
+      "fecha_creacion": "2012-03-08T00:00:00",
+      "domicilio": "FRA",
+      "srri": 5
+    },
+    {
+      "isin": "LU1654173480",
+      "nombre": "Robeco QI Global Dev Enh Index Eqs I €",
+      "nombre_legal": "Robeco QI Global Developed Enhanced Index Equities I €",
+      "gestora": "Robeco",
+      "ter": 0.38,
+      "fecha_creacion": "2017-09-15T00:00:00",
+      "domicilio": "LUX",
+      "srri": 5
+    }
+  ]
+}

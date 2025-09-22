@@ -9,7 +9,7 @@ import random
 import argparse # <-- NUEVA IMPORTACIÓN
 from pathlib import Path # <-- NUEVA IMPORTACIÓN
 from playwright.sync_api import sync_playwright
-from src.fund_operations_playwright import update_fund_csv_playwright
+from src.fund_operations_playwright import update_fund_in_db
 
 # --- 1. CONFIGURAR EL PARSER DE ARGUMENTOS ---
 parser = argparse.ArgumentParser(description="Worker con Playwright para actualizar datos de fondos.")
@@ -47,7 +47,7 @@ if args.only_new:
 
 # --- 4. PROCESAR CADA ISIN DE LA LISTA ---
 if not isins_a_procesar:
-    print("No hay fondos nuevos que procesar.")
+    print("No hay fondos que procesar.")
 else:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -56,13 +56,14 @@ else:
         for i, isin in enumerate(isins_a_procesar):
             print(f"\nProcesando {i+1}/{len(isins_a_procesar)}: {isin}...")
             
-            update_fund_csv_playwright(page, isin)
+            # --- LLAMADA MODIFICADA ---
+            api_call_made = update_fund_in_db(page, isin)
             
-            if i < len(isins_a_procesar) - 1:
+            if api_call_made and i < len(isins_a_procesar) - 1:
                 pausa = random.uniform(5, 10)
                 print(f"  -> Esperando {pausa:.0f} segundos...")
                 time.sleep(pausa)
 
         browser.close()
 
-print("\n--- Worker con Playwright finalizado ---")
+print("\n--- Worker finalizado ---")

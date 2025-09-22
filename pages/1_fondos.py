@@ -76,36 +76,60 @@ if 'domicilio' in df_catalogo.columns:
 else:
     selected_domicilios = []
 if 'ter' in df_catalogo.columns:
-    max_ter_value = df_catalogo['ter'].max() if not df_catalogo['ter'].dropna().empty else 10.0
+    ter_values = pd.to_numeric(df_catalogo['ter'], errors='coerce').dropna()
+    
+    max_ter_value = ter_values.max() if not ter_values.empty else 0.0
+
+    # --- CÓDIGO CORREGIDO ---
+    # Aseguramos que el valor máximo del slider sea siempre mayor que el mínimo (0.0)
+    slider_max_val = float(np.ceil(max_ter_value))
+    if slider_max_val <= 0.0:
+        slider_max_val = 5.0  # Establecemos un máximo por defecto si no hay TERs > 0
+
     selected_max_ter = st.sidebar.slider(
-        "TER Máximo (%)", 0.0, float(np.ceil(max_ter_value)),
-        value=float(np.ceil(max_ter_value)), step=0.1
+        "TER Máximo (%)", 
+        min_value=0.0, 
+        max_value=slider_max_val, # Usamos el valor máximo seguro
+        value=slider_max_val, 
+        step=0.1
     )
 else:
-    selected_max_ter = 10.0
+    selected_max_ter = 5.0 # Valor por defecto si la columna TER no existe
+
 search_term = st.sidebar.text_input("Buscar por nombre")
 
 
-# --- CÁLCULO DE MÉTRICAS ---
+# --- CÁLCULO DE MÉTRICAS (BLOQUE CORREGIDO) ---
 data_manager = DataManager()
 isines_catalogo = tuple(df_catalogo['isin'].unique())
 with st.spinner(f"Cargando datos de precios para {len(isines_catalogo)} fondos..."):
     all_navs_df = load_all_navs(data_manager, isines_catalogo)
-df_metrics_calculadas = pd.DataFrame()
+
+metricas_lista = []
 if not all_navs_df.empty:
     filtered_navs_for_metrics = filtrar_por_horizonte(all_navs_df, horizonte)
     daily_returns = filtered_navs_for_metrics.pct_change()
-    metricas_lista = []
+    
     for isin in daily_returns.columns:
         returns_sin_na = daily_returns[isin].dropna()
         if not returns_sin_na.empty and len(returns_sin_na) > 2:
             m = calcular_metricas_desde_rentabilidades(returns_sin_na)
             m['isin'] = isin
             metricas_lista.append(m)
-    if metricas_lista:
-        df_metrics_calculadas = pd.DataFrame(metricas_lista)
 
-# --- FUSIÓN Y FILTRADO ---
+if metricas_lista:
+    df_metrics_calculadas = pd.DataFrame(metricas_lista)
+else:
+    # --- SOLUCIÓN CLAVE ---
+    # Si no se calculó ninguna métrica (ej. solo hay fondos nuevos sin CSV),
+    # creamos un DataFrame vacío pero con TODAS las columnas que se esperan más adelante.
+    # Esto evita el KeyError en el pd.merge.
+    df_metrics_calculadas = pd.DataFrame(columns=[
+        'isin', 'annualized_return_%', 'cumulative_return_%', 
+        'volatility_ann_%', 'sharpe_ann', 'max_drawdown_%', 'sortino_ann'
+    ])
+
+# --- FUSIÓN, FILTRADO Y ORDENACIÓN (sin cambios) ---
 df_display = pd.merge(df_catalogo, df_metrics_calculadas, on='isin', how='left')
 df_filtered = df_display.copy()
 if selected_gestoras: df_filtered = df_filtered[df_filtered["gestora"].isin(selected_gestoras)]

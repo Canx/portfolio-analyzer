@@ -11,3 +11,5 @@ Riskfolio-Lib
 pytest
 Pyrebase4
 playwright
+dotenv
+psycopg2-binary
