@@ -5,6 +5,14 @@ import plotly.express as px
 from pathlib import Path
 import json
 from streamlit_local_storage import LocalStorage
+from src.db_connector import get_db_connection
+
+@st.cache_data
+def load_funds_from_db():
+    conn = get_db_connection()
+    df = pd.read_sql("SELECT * FROM funds", conn)
+    conn.close()
+    return df
 
 # --- CONFIGURACIÓN DE PÁGINA (Debe ser lo primero) ---
 st.set_page_config(
@@ -50,13 +58,12 @@ with st.expander("➕ Añadir nuevo fondo al catálogo por ISIN"):
                 st.cache_data.clear()
                 st.rerun()
 
-# --- Carga de Datos y Filtros ---
-fondos_config = load_config()
-if not fondos_config:
+df_catalogo = load_funds_from_db()
+
+if df_catalogo.empty:
     st.warning("Aún no has añadido ningún fondo a tu catálogo.")
     st.stop()
 
-df_catalogo = pd.DataFrame(fondos_config)
 df_catalogo['ter'] = pd.to_numeric(df_catalogo['ter'], errors='coerce')
 st.sidebar.header("Filtros del Explorador")
 horizonte = st.sidebar.selectbox(
@@ -138,7 +145,7 @@ if 'ter' in df_filtered.columns and 'max_ter_value' in locals():
     if selected_max_ter < max_ter_value:
         df_filtered = df_filtered[df_filtered["ter"] <= selected_max_ter]
 if search_term:
-    df_filtered = df_filtered[df_filtered["nombre"].str.contains(search_term, case=False)]
+    df_filtered = df_filtered[df_filtered["name"].str.contains(search_term, case=False)]
 st.markdown("---")
 st.subheader("Lista de Fondos")
 st.write(f"Mostrando **{len(df_filtered)}** de **{len(df_catalogo)}** fondos.")
@@ -150,7 +157,7 @@ sort_options = {
     "Ratio Sortino": "sortino_ann", # <-- AÑADIDO
     "Volatilidad": "volatility_ann_%",
     "TER": "ter",
-    "Nombre": "nombre"
+    "Nombre": "name"
 }
 col1_sort, col2_sort = st.columns(2)
 with col1_sort:
@@ -195,7 +202,7 @@ for index, row in df_sorted.iterrows():
     isin_actual = row.get('isin')
 
     with cols[0]:
-        st.markdown(f"**{row.get('nombre', 'N/A')}**"); st.caption(f"{row.get('nombre_legal', '')}")
+        st.markdown(f"**{row.get('name', 'N/A')}**"); st.caption(f"{row.get('nombre_legal', '')}")
     with cols[1]:
         st.code(isin_actual)
     with cols[2]:
@@ -236,17 +243,17 @@ for index, row in df_sorted.iterrows():
                     fondos_en_comparador.append(isin_actual)
                     current_comp = {"carteras": [], "fondos": fondos_en_comparador}
                     localS.setItem('saved_comparison', json.dumps(current_comp))
-                    st.toast(f"'{row.get('nombre')}' añadido al comparador.")
+                    st.toast(f"'{row.get('name')}' añadido al comparador.")
                     st.rerun()
 
 # --- Gráfico de Riesgo vs. Retorno ---
 st.markdown("---")
 st.subheader("🎯 Gráfico de Riesgo vs. Retorno")
 if not df_metrics_calculadas.empty:
-    df_grafico = pd.merge(df_metrics_calculadas, df_catalogo[['isin', 'nombre']], on='isin', how='left')
+    df_grafico = pd.merge(df_metrics_calculadas, df_catalogo[['isin', 'name']], on='isin', how='left')
     fig_risk = px.scatter(
         df_grafico, x="volatility_ann_%", y="annualized_return_%",
-        hover_name="nombre", title=f"Eficiencia de los Fondos del Catálogo ({horizonte})"
+        hover_name="name", title=f"Eficiencia de los Fondos del Catálogo ({horizonte})"
     )
     fig_risk.update_layout(xaxis_title="Volatilidad Anualizada (%)", yaxis_title="Rentabilidad Anualizada (%)")
     st.plotly_chart(fig_risk, use_container_width=True)

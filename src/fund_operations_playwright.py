@@ -92,6 +92,7 @@ def get_nav_data_with_playwright(page: Page, performance_id: str) -> pd.DataFram
     print("  -> No se pudieron capturar los datos del gráfico.")
     return None
 
+
 # ... (la función update_fund_csv_playwright no cambia) ...
 def update_fund_csv_playwright(page: Page, isin: str, data_dir: str = "fondos_data") -> bool:
     """

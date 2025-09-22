@@ -10,6 +10,7 @@ import argparse # <-- NUEVA IMPORTACIÓN
 from pathlib import Path # <-- NUEVA IMPORTACIÓN
 from playwright.sync_api import sync_playwright
 from src.fund_operations_playwright import update_fund_in_db
+from src.db_connector import get_db_connection
 
 # --- 1. CONFIGURAR EL PARSER DE ARGUMENTOS ---
 parser = argparse.ArgumentParser(description="Worker con Playwright para actualizar datos de fondos.")
@@ -20,16 +21,19 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-print("--- Iniciando Worker con Playwright ---")
+print("--- Iniciando Worker con Playwright (para PostgreSQL) ---")
 
-# --- 2. CARGAR LA LISTA DE ISINs ---
+# --- LÓGICA MODIFICADA: LEER ISINs DESDE LA BD ---
 try:
-    with open('fondos.json') as file:
-        fondos_data = json.load(file)
-    isins_a_procesar = [fondo.get("isin") for fondo in fondos_data.get('fondos', []) if fondo.get("isin")]
-    print(f"✅ Se encontraron {len(isins_a_procesar)} ISINs totales en 'fondos.json'.")
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT isin FROM funds")
+        # Obtenemos una lista de tuplas, así que la aplanamos
+        isins_a_procesar = [item[0] for item in cursor.fetchall()]
+    conn.close()
+    print(f"✅ Se encontraron {len(isins_a_procesar)} ISINs en la base de datos.")
 except Exception as e:
-    print(f"❌ Error al cargar 'fondos.json': {e}"); exit()
+    print(f"❌ Error al leer ISINs de la base de datos: {e}"); exit()
 
 # --- 3. APLICAR EL FILTRO SI EL FLAG ESTÁ ACTIVO ---
 if args.only_new:
