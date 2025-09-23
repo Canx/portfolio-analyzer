@@ -40,10 +40,10 @@ localS = LocalStorage()
 st.title("🔎 Explorador de Fondos del Catálogo")
 st.write("Aquí puedes ver, filtrar, añadir nuevos fondos al catálogo y asignarlos a tu cartera activa.")
 
-with st.expander("➕ Añadir nuevo fondo al catálogo por ISIN"):
+with st.expander("➕ Solicitar incorporación de fondo al catálogo por ISIN"):
     with st.form("form_add_fund_explorer"):
-        new_isin = st.text_input("Introduce un ISIN para buscarlo", placeholder="Ej: IE00B4L5Y983").strip().upper()
-        submitted = st.form_submit_button("Buscar y Añadir")
+        new_isin = st.text_input("Introduce un ISIN", placeholder="Ej: IE00B4L5Y983").strip().upper()
+        submitted = st.form_submit_button("Solicitar fondo")
 
         if submitted and new_isin:
             user_id = st.session_state.user_info['uid']
