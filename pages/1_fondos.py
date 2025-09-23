@@ -14,11 +14,11 @@ st.set_page_config(
 )
 
 # Importaciones de funciones compartidas
-from src.data_manager import DataManager, filtrar_por_horizonte, request_new_fund
-from src.metrics import calcular_metricas_desde_rentabilidades
+from src.utils import load_funds_from_db  # <-- ¡SIMPLIFICADO!
+from src.data_manager import request_new_fund
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
 from src.auth import page_init_and_auth, logout_user
-from src.utils import load_funds_from_db, load_all_navs
+from src.db_connector import get_db_connection
 
 # --- INICIALIZACIÓN Y PROTECCIÓN ---
 auth, db = page_init_and_auth()
@@ -38,120 +38,89 @@ with st.sidebar:
 # --- LÓGICA DE LA PÁGINA ---
 localS = LocalStorage()
 st.title("🔎 Explorador de Fondos del Catálogo")
-st.write("Aquí puedes ver, filtrar, añadir nuevos fondos al catálogo y asignarlos a tu cartera activa.")
 
-with st.expander("➕ Solicitar incorporación de fondo al catálogo por ISIN"):
+col1, col2 = st.columns([4, 1])
+with col1:
+    st.write("Aquí puedes ver, filtrar y solicitar nuevos fondos para el catálogo.")
+with col2:
+    if st.button("🔄 Recargar Catálogo", help="Vuelve a leer la base de datos"):
+        st.cache_data.clear()
+        st.toast("Catálogo recargado desde la base de datos.")
+        st.rerun()
+
+with st.expander("➕ Solicitar nuevo fondo por ISIN"):
     with st.form("form_add_fund_explorer"):
-        new_isin = st.text_input("Introduce un ISIN", placeholder="Ej: IE00B4L5Y983").strip().upper()
-        submitted = st.form_submit_button("Solicitar fondo")
-
+        new_isin = st.text_input("Introduce un ISIN para solicitarlo", placeholder="Ej: IE00B4L5Y983").strip().upper()
+        submitted = st.form_submit_button("Enviar Solicitud")
         if submitted and new_isin:
             user_id = st.session_state.user_info['uid']
-            # Llamamos a la nueva función
             if request_new_fund(new_isin, user_id):
                 st.rerun()
 
-df_catalogo = load_funds_from_db()
-
-if df_catalogo.empty:
-    st.warning("Aún no has añadido ningún fondo a tu catálogo.")
-    st.stop()
-
-df_catalogo['ter'] = pd.to_numeric(df_catalogo['ter'], errors='coerce')
+# --- CARGA DE DATOS Y FILTROS ---
 st.sidebar.header("Filtros del Explorador")
 horizonte = st.sidebar.selectbox(
-            "Horizonte temporal",
-            HORIZONTE_OPCIONES,
-            index=HORIZONTE_DEFAULT_INDEX,
-            key="horizonte")
-if 'gestora' in df_catalogo.columns:
-    gestoras = sorted(df_catalogo["gestora"].dropna().unique())
+    "Horizonte temporal para métricas",
+    HORIZONTE_OPCIONES,
+    index=HORIZONTE_DEFAULT_INDEX,
+    key="horizonte_fondos"
+)
+
+@st.cache_data
+def load_data_with_metrics(selected_horizon: str):
+    conn = get_db_connection()
+    if not conn: return pd.DataFrame()
+    try:
+        query = """
+            SELECT
+                f.*, 
+                m.annualized_return_pct, m.cumulative_return_pct,
+                m.volatility_pct, m.sharpe_ratio,
+                m.sortino_ratio, m.max_drawdown_pct
+            FROM funds f
+            LEFT JOIN fund_metrics m ON f.isin = m.isin AND m.horizon = %(horizon)s
+        """
+        df = pd.read_sql(query, conn, params={"horizon": selected_horizon})
+        return df
+    finally:
+        if conn: conn.close()
+
+df_display = load_data_with_metrics(horizonte)
+
+if df_display.empty:
+    st.warning("Aún no hay fondos en el catálogo o el worker de métricas no se ha ejecutado.")
+    st.stop()
+
+df_display['ter'] = pd.to_numeric(df_display['ter'], errors='coerce')
+
+# (Filtros no cambian, solo los nombres de las columnas)
+if 'gestora' in df_display.columns:
+    gestoras = sorted(df_display["gestora"].dropna().unique())
     selected_gestoras = st.sidebar.multiselect("Filtrar por Gestora", gestoras, default=[])
 else:
     selected_gestoras = []
-# (Resto de filtros no cambian)
-if 'domicilio' in df_catalogo.columns:
-    domicilios = sorted(df_catalogo["domicilio"].dropna().unique())
-    selected_domicilios = st.sidebar.multiselect("Filtrar por Domicilio", domicilios, default=[])
-else:
-    selected_domicilios = []
-if 'ter' in df_catalogo.columns:
-    ter_values = pd.to_numeric(df_catalogo['ter'], errors='coerce').dropna()
-    
-    max_ter_value = ter_values.max() if not ter_values.empty else 0.0
-
-    # --- CÓDIGO CORREGIDO ---
-    # Aseguramos que el valor máximo del slider sea siempre mayor que el mínimo (0.0)
-    slider_max_val = float(np.ceil(max_ter_value))
-    if slider_max_val <= 0.0:
-        slider_max_val = 5.0  # Establecemos un máximo por defecto si no hay TERs > 0
-
-    selected_max_ter = st.sidebar.slider(
-        "TER Máximo (%)", 
-        min_value=0.0, 
-        max_value=slider_max_val, # Usamos el valor máximo seguro
-        value=slider_max_val, 
-        step=0.1
-    )
-else:
-    selected_max_ter = 5.0 # Valor por defecto si la columna TER no existe
 
 search_term = st.sidebar.text_input("Buscar por nombre")
 
-
-# --- CÁLCULO DE MÉTRICAS (BLOQUE CORREGIDO) ---
-data_manager = DataManager()
-isines_catalogo = tuple(df_catalogo['isin'].unique())
-with st.spinner(f"Cargando datos de precios para {len(isines_catalogo)} fondos..."):
-    all_navs_df = load_all_navs(data_manager, isines_catalogo)
-
-metricas_lista = []
-if not all_navs_df.empty:
-    filtered_navs_for_metrics = filtrar_por_horizonte(all_navs_df, horizonte)
-    daily_returns = filtered_navs_for_metrics.pct_change()
-    
-    for isin in daily_returns.columns:
-        returns_sin_na = daily_returns[isin].dropna()
-        if not returns_sin_na.empty and len(returns_sin_na) > 2:
-            m = calcular_metricas_desde_rentabilidades(returns_sin_na)
-            m['isin'] = isin
-            metricas_lista.append(m)
-
-if metricas_lista:
-    df_metrics_calculadas = pd.DataFrame(metricas_lista)
-else:
-    # --- SOLUCIÓN CLAVE ---
-    # Si no se calculó ninguna métrica (ej. solo hay fondos nuevos sin CSV),
-    # creamos un DataFrame vacío pero con TODAS las columnas que se esperan más adelante.
-    # Esto evita el KeyError en el pd.merge.
-    df_metrics_calculadas = pd.DataFrame(columns=[
-        'isin', 'annualized_return_%', 'cumulative_return_%', 
-        'volatility_ann_%', 'sharpe_ann', 'max_drawdown_%', 'sortino_ann'
-    ])
-
-# --- FUSIÓN, FILTRADO Y ORDENACIÓN (sin cambios) ---
-df_display = pd.merge(df_catalogo, df_metrics_calculadas, on='isin', how='left')
+# --- FILTRADO DE DATOS ---
 df_filtered = df_display.copy()
-if selected_gestoras: df_filtered = df_filtered[df_filtered["gestora"].isin(selected_gestoras)]
-if selected_domicilios: df_filtered = df_filtered[df_filtered["domicilio"].isin(selected_domicilios)]
-if 'ter' in df_filtered.columns and 'max_ter_value' in locals():
-    if selected_max_ter < max_ter_value:
-        df_filtered = df_filtered[df_filtered["ter"] <= selected_max_ter]
 if search_term:
     df_filtered = df_filtered[df_filtered["name"].str.contains(search_term, case=False)]
+
 st.markdown("---")
 st.subheader("Lista de Fondos")
-st.write(f"Mostrando **{len(df_filtered)}** de **{len(df_catalogo)}** fondos.")
+st.write(f"Mostrando **{len(df_filtered)}** de **{len(df_display)}** fondos.")
 
-# --- CONTROLES DE ORDENACIÓN MODIFICADOS ---
+# --- CONTROLES DE ORDENACIÓN (NOMBRES DE COLUMNA ACTUALIZADOS) ---
 sort_options = {
-    "Rentabilidad Anual": "annualized_return_%",
-    "Ratio Sharpe": "sharpe_ann",
-    "Ratio Sortino": "sortino_ann", # <-- AÑADIDO
-    "Volatilidad": "volatility_ann_%",
+    "Rentabilidad Anual": "annualized_return_pct",
+    "Ratio Sharpe": "sharpe_ratio",
+    "Ratio Sortino": "sortino_ratio",
+    "Volatilidad": "volatility_pct",
     "TER": "ter",
-    "Nombre": "name"
+    "Nombre": "name",
 }
+
 col1_sort, col2_sort = st.columns(2)
 with col1_sort:
     sort_by_name = st.selectbox("Ordenar por", options=list(sort_options.keys()), index=0)
@@ -161,14 +130,14 @@ with col2_sort:
     sort_ascending = (sort_order_name == "Ascendente")
 df_sorted = df_filtered.sort_values(by=sort_by_col, ascending=sort_ascending, na_position='last')
 
-# --- CABECERA ACTUALIZADA ---
-header_cols = st.columns((3, 1.5, 1, 1, 1, 1, 1, 1.5, 1, 1.5, 1.5))
+# --- CABECERA (NOMBRES DE COLUMNA ACTUALIZADOS) ---
+header_cols = st.columns((3, 1.5, 1, 1, 1, 1, 1, 1, 1, 1.5, 1.5))
 header_cols[0].markdown("**Nombre**")
 header_cols[1].markdown("**ISIN**")
 header_cols[2].markdown(f"**Rent. (%)**")
 header_cols[3].markdown(f"**Vol. (%)**")
 header_cols[4].markdown("**Sharpe**")
-header_cols[5].markdown("**Sortino**") # <-- AÑADIDO
+header_cols[5].markdown("**Sortino**")
 header_cols[6].markdown("**TER (%)**")
 header_cols[7].markdown("**Gestora**")
 header_cols[8].markdown("**SRRI**")
@@ -189,33 +158,20 @@ isins_in_active_portfolio = []
 if active_portfolio_name:
     isins_in_active_portfolio = st.session_state.carteras.get(active_portfolio_name, {}).get("pesos", {}).keys()
 
-# --- BUCLE DE VISUALIZACIÓN MODIFICADO ---
+# --- BUCLE DE VISUALIZACIÓN (NOMBRES DE COLUMNA ACTUALIZADOS) ---
 for index, row in df_sorted.iterrows():
-    cols = st.columns((3, 1.5, 1, 1, 1, 1, 1, 1.5, 1, 1.5, 1.5))
+    cols = st.columns((3, 1.5, 1, 1, 1, 1, 1, 1, 1, 1.5, 1.5))
     isin_actual = row.get('isin')
 
-    with cols[0]:
-        st.markdown(f"**{row.get('name', 'N/A')}**"); st.caption(f"{row.get('nombre_legal', '')}")
-    with cols[1]:
-        st.code(isin_actual)
-    with cols[2]:
-        st.write(f"{row.get('annualized_return_%', 0):.2f}" if pd.notna(row.get('annualized_return_%')) else "N/A")
-    with cols[3]:
-        st.write(f"{row.get('volatility_ann_%', 0):.2f}" if pd.notna(row.get('volatility_ann_%')) else "N/A")
-    with cols[4]:
-        st.write(f"{row.get('sharpe_ann', 0):.2f}" if pd.notna(row.get('sharpe_ann')) else "N/A")
-    
-    with cols[5]: # <-- NUEVA COLUMNA SORTINO
-        sortino = row.get('sortino_ann')
-        st.write(f"{sortino:.2f}" if pd.notna(sortino) else "N/A")
-        
-    with cols[6]:
-        st.write(f"{row.get('ter', 0):.2f}" if pd.notna(row.get('ter')) else "N/A")
-    with cols[7]:
-        st.write(row.get('gestora', 'N/A'))
-    with cols[8]:
-        st.write(f"{row.get('srri', 'N/A')}")
-
+    with cols[0]: st.markdown(f"**{row.get('name', 'N/A')}**")
+    with cols[1]: st.code(isin_actual)
+    with cols[2]: st.write(f"{row.get('annualized_return_pct', 0):.2f}" if pd.notna(row.get('annualized_return_pct')) else "N/A")
+    with cols[3]: st.write(f"{row.get('volatility_pct', 0):.2f}" if pd.notna(row.get('volatility_pct')) else "N/A")
+    with cols[4]: st.write(f"{row.get('sharpe_ratio', 0):.2f}" if pd.notna(row.get('sharpe_ratio')) else "N/A")
+    with cols[5]: st.write(f"{row.get('sortino_ratio', 0):.2f}" if pd.notna(row.get('sortino_ratio')) else "N/A")
+    with cols[6]: st.write(f"{row.get('ter', 0):.2f}" if pd.notna(row.get('ter')) else "N/A")
+    with cols[7]: st.write(row.get('gestora', 'N/A'))
+    with cols[8]: st.write(f"{row.get('srri', 'N/A')}")
     with cols[9]:
         if isin_actual in isins_in_active_portfolio:
             st.success("✔️")
@@ -239,16 +195,18 @@ for index, row in df_sorted.iterrows():
                     st.toast(f"'{row.get('name')}' añadido al comparador.")
                     st.rerun()
 
-# --- Gráfico de Riesgo vs. Retorno ---
+# --- Gráfico de Riesgo vs. Retorno (NOMBRES DE COLUMNA ACTUALIZADOS) ---
 st.markdown("---")
 st.subheader("🎯 Gráfico de Riesgo vs. Retorno")
-if not df_metrics_calculadas.empty:
-    df_grafico = pd.merge(df_metrics_calculadas, df_catalogo[['isin', 'name']], on='isin', how='left')
+if not df_filtered.empty:
     fig_risk = px.scatter(
-        df_grafico, x="volatility_ann_%", y="annualized_return_%",
-        hover_name="name", title=f"Eficiencia de los Fondos del Catálogo ({horizonte})"
+        df_filtered.dropna(subset=['volatility_pct', 'annualized_return_pct']),
+        x="volatility_pct",
+        y="annualized_return_pct",
+        hover_name="name",
+        title=f"Eficiencia de los Fondos del Catálogo ({horizonte})"
     )
     fig_risk.update_layout(xaxis_title="Volatilidad Anualizada (%)", yaxis_title="Rentabilidad Anualizada (%)")
     st.plotly_chart(fig_risk, use_container_width=True)
 else:
-    st.warning("No hay suficientes datos históricos para generar el gráfico.")
+    st.warning("No hay fondos que mostrar con los filtros seleccionados.")
