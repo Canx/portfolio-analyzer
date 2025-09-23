@@ -20,6 +20,7 @@ class DataManager:
         self.recency_threshold_days = 5
         self.api_call_made_in_this_run = False
 
+
     def _download_nav(self, isin: str, start_date: date, end_date: date) -> pd.DataFrame | None:
         """
         Descarga datos de Morningstar. ESTE MÉTODO AHORA SOLO DEBERÍA SER USADO POR EL WORKER.
@@ -207,3 +208,43 @@ def update_fund_details_in_config(isin_to_update: str):
         return True
 
     return False
+
+def request_new_fund(isin: str, user_id: str) -> bool:
+        """
+        Crea una nueva petición en la tabla 'asset_requests' para que el worker la procese.
+        No añade el fondo directamente al catálogo.
+        """
+        # Primero, comprobamos si el fondo ya existe en el catálogo principal
+        conn = get_db_connection()
+        if not conn:
+            return False
+        
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT isin FROM funds WHERE isin = %s", (isin,))
+                if cursor.fetchone():
+                    st.warning("Este fondo ya existe en el catálogo.")
+                    return False
+                
+                # Comprobamos si ya hay una petición pendiente para este ISIN
+                cursor.execute("SELECT isin FROM asset_requests WHERE isin = %s AND status = 'pending'", (isin,))
+                if cursor.fetchone():
+                    st.info("Ya hay una petición para añadir este fondo. Será procesado pronto.")
+                    return False
+
+                # Si no existe y no está pendiente, creamos la nueva petición
+                cursor.execute(
+                    "INSERT INTO asset_requests (isin, requested_by_uid) VALUES (%s, %s)",
+                    (isin, user_id)
+                )
+                conn.commit()
+                st.success(f"¡Petición para añadir {isin} enviada! El fondo aparecerá en el catálogo cuando sea procesado.")
+                return True
+
+        except Exception as e:
+            st.error(f"Error al enviar la petición: {e}")
+            conn.rollback()
+            return False
+        finally:
+            if conn:
+                conn.close()

@@ -8,7 +8,6 @@ from src.portfolio import Portfolio
 from src.utils import load_all_navs # Ya no importamos load_config
 from src.data_manager import DataManager, filtrar_por_horizonte
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
-from src.db_connector import get_db_connection # <-- Importamos el conector de BD
 
 # --- INICIALIZACIÓN Y PROTECCIÓN ---
 auth, db = page_init_and_auth()

@@ -5,7 +5,6 @@ import plotly.express as px
 from pathlib import Path
 import json
 from streamlit_local_storage import LocalStorage
-from src.db_connector import get_db_connection
 
 # --- CONFIGURACIÓN DE PÁGINA (Debe ser lo primero) ---
 st.set_page_config(
@@ -15,7 +14,7 @@ st.set_page_config(
 )
 
 # Importaciones de funciones compartidas
-from src.data_manager import find_and_add_fund_by_isin, update_fund_details_in_config, DataManager, filtrar_por_horizonte
+from src.data_manager import DataManager, filtrar_por_horizonte, request_new_fund
 from src.metrics import calcular_metricas_desde_rentabilidades
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
 from src.auth import page_init_and_auth, logout_user
@@ -47,8 +46,9 @@ with st.expander("➕ Añadir nuevo fondo al catálogo por ISIN"):
         submitted = st.form_submit_button("Buscar y Añadir")
 
         if submitted and new_isin:
-            if find_and_add_fund_by_isin(new_isin):
-                st.cache_data.clear()
+            user_id = st.session_state.user_info['uid']
+            # Llamamos a la nueva función
+            if request_new_fund(new_isin, user_id):
                 st.rerun()
 
 df_catalogo = load_funds_from_db()
