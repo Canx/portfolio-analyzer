@@ -219,3 +219,21 @@ if len(returns_a_correlacionar) > 1:
         title="Correlación entre los Activos Seleccionados"
     )
     st.plotly_chart(fig_corr, use_container_width=True)
+
+# --- NUEVO: Gráfico de Riesgo vs. Retorno ---
+st.markdown("---")
+st.subheader("🎯 Gráfico de Riesgo vs. Retorno")
+if lista_metricas:
+    df_comparativa = pd.DataFrame(lista_metricas)
+    if not df_comparativa.empty:
+        fig_risk = px.scatter(
+            df_comparativa.dropna(subset=['volatility_ann_%', 'annualized_return_%']),
+            x="volatility_ann_%",
+            y="annualized_return_%",
+            hover_name="nombre",
+            title=f"Eficiencia de los Activos Seleccionados ({horizonte})"
+        )
+        fig_risk.update_layout(xaxis_title="Volatilidad Anualizada (%)", yaxis_title="Rentabilidad Anualizada (%)")
+        st.plotly_chart(fig_risk, use_container_width=True)
+else:
+    st.warning("No hay datos suficientes para generar el gráfico de riesgo vs. retorno.")

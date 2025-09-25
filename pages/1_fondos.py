@@ -194,19 +194,3 @@ for index, row in df_sorted.iterrows():
                     localS.setItem('saved_comparison', json.dumps(current_comp))
                     st.toast(f"'{row.get('name')}' añadido al comparador.")
                     st.rerun()
-
-# --- Gráfico de Riesgo vs. Retorno (NOMBRES DE COLUMNA ACTUALIZADOS) ---
-st.markdown("---")
-st.subheader("🎯 Gráfico de Riesgo vs. Retorno")
-if not df_filtered.empty:
-    fig_risk = px.scatter(
-        df_filtered.dropna(subset=['volatility_pct', 'annualized_return_pct']),
-        x="volatility_pct",
-        y="annualized_return_pct",
-        hover_name="name",
-        title=f"Eficiencia de los Fondos del Catálogo ({horizonte})"
-    )
-    fig_risk.update_layout(xaxis_title="Volatilidad Anualizada (%)", yaxis_title="Rentabilidad Anualizada (%)")
-    st.plotly_chart(fig_risk, use_container_width=True)
-else:
-    st.warning("No hay fondos que mostrar con los filtros seleccionados.")
