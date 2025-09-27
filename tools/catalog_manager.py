@@ -37,20 +37,21 @@ def update_request_status(conn, request_id, status):
 
 def save_fund_data(conn, metadata, prices_df):
     print("  -> Intentando guardar los siguientes metadatos:")
-    print(f"     ISIN: {metadata.get('isin')}, TER: {metadata.get('ter')}, Gestora: {metadata.get('gestora')}")
+    print(f"     ISIN: {metadata.get('isin')}, TER: {metadata.get('ter')}, Gestora: {metadata.get('gestora')}, SRRI: {metadata.get('srri')}")
     try:
         with conn.cursor() as cursor:
             sql_query = """
-                INSERT INTO funds (isin, performance_id, security_id, name, ter, morningstar_category, gestora, domicilio)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO funds (isin, performance_id, security_id, name, ter, morningstar_category, gestora, domicilio, srri)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (isin) DO UPDATE SET
                     performance_id = EXCLUDED.performance_id, security_id = EXCLUDED.security_id, name = EXCLUDED.name,
                     ter = EXCLUDED.ter, morningstar_category = EXCLUDED.morningstar_category, gestora = EXCLUDED.gestora,
-                    domicilio = EXCLUDED.domicilio, last_updated_metadata = NOW();
+                    domicilio = EXCLUDED.domicilio, srri = EXCLUDED.srri, last_updated_metadata = NOW();
             """
             data_tuple = (
                 metadata.get('isin'), metadata.get('performance_id'), metadata.get('security_id'), metadata.get('name'),
-                metadata.get('ter'), metadata.get('morningstar_category'), metadata.get('gestora'), metadata.get('domicilio')
+                metadata.get('ter'), metadata.get('morningstar_category'), metadata.get('gestora'), metadata.get('domicilio'),
+                metadata.get('srri')
             )
             cursor.execute(sql_query, data_tuple)
             if prices_df is not None and not prices_df.empty:
@@ -72,11 +73,11 @@ def calculate_and_save_metrics(conn, isin: str, prices_df: pd.DataFrame):
         return
 
     print("  -> Calculando métricas para los diferentes horizontes...")
-    
+
     # Preparamos los datos para el cálculo
     prices_df.set_index('date', inplace=True)
     daily_returns = prices_df['nav'].pct_change().dropna()
-    
+
     metrics_to_insert = []
     for horizonte in HORIZONTE_OPCIONES:
         filtered_returns = filtrar_por_horizonte(pd.DataFrame(daily_returns), horizonte)['nav']
@@ -153,7 +154,7 @@ def main():
     else:
         print("No se especificó ninguna tarea. Usa --help para ver las opciones.")
         exit()
-    
+
     conn.close()
 
     if not isins_to_process:
@@ -170,24 +171,24 @@ def main():
         for isin in isins_to_process:
             print(f"\n--- Procesando {isin} ---")
             fund_data = scrape_fund_data(page, isin)
-            
+
             conn = get_db_connection()
             if conn and fund_data:
                 # 1. Guardar metadatos y precios
                 save_fund_data(conn, fund_data['metadata'], fund_data['prices'])
-                
+
                 # 2. CALCULAR Y GUARDAR MÉTRICAS (NUEVO PASO)
                 calculate_and_save_metrics(conn, isin, fund_data['prices'])
-                
+
                 # 3. Actualizar estado de la petición (si aplica)
                 if isin in request_map:
                     update_request_status(conn, request_map[isin], 'processed')
-            
+
             elif isin in request_map and conn:
                 update_request_status(conn, request_map[isin], 'failed')
-            
+
             if conn: conn.close()
-            
+
             if len(isins_to_process) > 1:
                 pausa = random.uniform(5, 10)
                 print(f"  -> Esperando {pausa:.0f} segundos...")
