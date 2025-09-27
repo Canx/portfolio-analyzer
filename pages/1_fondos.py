@@ -66,15 +66,16 @@ def load_data_with_metrics(selected_horizon: str):
     try:
         query = """
             SELECT
-                f.isin, f.name, f.ter, f.gestora, f.domicilio, f.srri, f.morningstar_category,
+                f.isin, f.name, f.ter, f.gestora, f.domicilio, f.srri, f.morningstar_category, f.currency,
                 m.annualized_return_pct, m.volatility_pct, m.sharpe_ratio
             FROM funds f
             LEFT JOIN fund_metrics m ON f.isin = m.isin AND m.horizon = %(horizon)s
         """
         df = pd.read_sql(query, conn, params={"horizon": selected_horizon})
         # Limpieza de datos
-        df['ter'] = pd.to_numeric(df['ter'], errors='coerce')
-        df['srri'] = pd.to_numeric(df['srri'], errors='coerce')
+        for col in ['ter', 'srri', 'annualized_return_pct', 'volatility_pct', 'sharpe_ratio']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
         return df
     finally:
         if conn: conn.close()
@@ -98,40 +99,56 @@ if df_display.empty:
 df_filtered = df_display.copy()
 
 # Filtros de texto
-gestoras = sorted(df_filtered["gestora"].dropna().unique())
-selected_gestoras = st.sidebar.multiselect("Gestora", gestoras)
-if selected_gestoras:
-    df_filtered = df_filtered[df_filtered["gestora"].isin(selected_gestoras)]
+for col_name in ['gestora', 'domicilio', 'morningstar_category', 'currency']:
+    if col_name in df_filtered.columns:
+        options = sorted(df_filtered[col_name].dropna().unique())
+        if options:
+            selected = st.sidebar.multiselect(col_name.replace('_', ' ').capitalize(), options)
+            if selected:
+                df_filtered = df_filtered[df_filtered[col_name].isin(selected)]
 
-domicilios = sorted(df_filtered["domicilio"].dropna().unique())
-selected_domicilios = st.sidebar.multiselect("Domicilio", domicilios)
-if selected_domicilios:
-    df_filtered = df_filtered[df_filtered["domicilio"].isin(selected_domicilios)]
+# --- LÓGICA DE SLIDERS DINÁMICOS Y ROBUSTOS ---
+def create_dynamic_slider(df, column_name, label, min_val=None, max_val=None, step=None, format_str=None):
+    # Crear una copia para evitar SettingWithCopyWarning
+    df_result = df.copy()
+    
+    # Trabajar solo con los valores no nulos para definir los límites del slider
+    df_col = df_result[column_name].dropna()
+    if df_col.empty:
+        return df_result # No mostrar el slider si no hay datos
 
-categorias = sorted(df_filtered["morningstar_category"].dropna().unique())
-selected_categorias = st.sidebar.multiselect("Categoría Morningstar", categorias)
-if selected_categorias:
-    df_filtered = df_filtered[df_filtered["morningstar_category"].isin(selected_categorias)]
+    # Usar los valores del dataframe si no se especifican límites
+    actual_min = min_val if min_val is not None else float(df_col.min())
+    actual_max = max_val if max_val is not None else float(df_col.max())
+    
+    # Asegurarnos de que min < max para evitar el error de Streamlit
+    if actual_min >= actual_max:
+        return df_result[df_result[column_name] == actual_min]
 
-# Filtros numéricos con sliders
-min_srri, max_srri = st.sidebar.slider(
-    'Rango de SRRI',
-    min_value=int(df_filtered['srri'].min()),
-    max_value=int(df_filtered['srri'].max()),
-    value=(int(df_filtered['srri'].min()), int(df_filtered['srri'].max()))
-)
-df_filtered = df_filtered[df_filtered['srri'].between(min_srri, max_srri)]
+    # Convertir a int si son números enteros
+    if df_col.dtype == 'int64' or all(df_col == df_col.astype(int)):
+        actual_min, actual_max = int(actual_min), int(actual_max)
+        step = 1 if step is None else int(step)
 
-max_ter = st.sidebar.slider('TER máximo (%)', 0.0, 5.0, 5.0, 0.01)
-df_filtered = df_filtered[df_filtered['ter'] <= max_ter]
+    selected_range = st.sidebar.slider(
+        label,
+        min_value=actual_min,
+        max_value=actual_max,
+        value=(actual_min, actual_max),
+        step=step,
+        format=format_str
+    )
+    
+    # CORRECCIÓN CLAVE: Al filtrar, mantener los que están en el rango Y también los que son nulos (NaN)
+    condition = df_result[column_name].between(selected_range[0], selected_range[1])
+    nan_condition = df_result[column_name].isna()
+    return df_result[condition | nan_condition]
 
-min_rentabilidad, max_rentabilidad = st.sidebar.slider(
-    'Rentabilidad Anual (%)', -50.0, 100.0, (-50.0, 100.0), 0.5
-)
-df_filtered = df_filtered[df_filtered['annualized_return_pct'].between(min_rentabilidad, max_rentabilidad)]
-
-max_volatilidad = st.sidebar.slider('Volatilidad máxima (%)', 0.0, 100.0, 100.0, 0.5)
-df_filtered = df_filtered[df_filtered['volatility_pct'] <= max_volatilidad]
+df_filtered = create_dynamic_slider(df_filtered, 'srri', 'Rango de SRRI')
+df_filtered = create_dynamic_slider(df_filtered, 'ter', 'Rango de TER (%)', step=0.01)
+df_filtered = create_dynamic_slider(df_filtered, 'annualized_return_pct', 'Rentabilidad Anual (%)', step=0.5)
+df_filtered = create_dynamic_slider(df_filtered, 'volatility_pct', 'Volatilidad (%)', step=0.5)
+df_filtered = create_dynamic_slider(df_filtered, 'sharpe_ratio', 'Rango de Ratio de Sharpe', step=0.1)
 
 # --- BÚSQUEDA RÁPIDA (TEXTO) ---
 st.markdown("---")
@@ -156,6 +173,7 @@ df_editable = st.data_editor(
         "annualized_return_pct": st.column_config.NumberColumn(f"Rent. {horizonte} (%)", format="%.2f%%"),
         "volatility_pct": st.column_config.NumberColumn(f"Vol. {horizonte} (%)", format="%.2f%%"),
         "sharpe_ratio": st.column_config.NumberColumn(f"Sharpe {horizonte}", format="%.2f"),
+        "currency": "Moneda",
     },
     use_container_width=True,
     hide_index=True,

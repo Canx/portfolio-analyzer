@@ -53,31 +53,54 @@ def scrape_fund_data(page: Page, isin: str) -> dict | None:
         print(f"  -> No se pudo encontrar el ID necesario para {isin}.")
         return None
 
-    # --- Paso 2: Ir a la página de Cotización para TER y SRRI ---
+    # --- Paso 2: Ir a la página de Cotización para capturar todas las APIs ---
     try:
         quote_url = f"https://global.morningstar.com/es/inversiones/fondos/{performance_id}/cotizacion"
         srri_api_pattern = f"**/sal-service/v1/fund/quote/v7/{security_id}/data**"
+        category_api_pattern = f"**/sal-service/v1/fund/esgRisk/{security_id}/data**"
+        # NUEVO: Patrón para la API de metadatos (domicilio y moneda)
+        meta_api_pattern = f"**/sal-service/v1/fund/securityMetaData/{security_id}**"
 
-        print(f"  -> Navegando a 'Cotización' para obtener TER y SRRI...")
-        with page.expect_response(srri_api_pattern, timeout=20000) as srri_info:
+        print(f"  -> Navegando a 'Cotización' para obtener todos los metadatos...")
+        with page.expect_response(srri_api_pattern, timeout=20000) as srri_info, \
+             page.expect_response(category_api_pattern, timeout=20000) as category_info, \
+             page.expect_response(meta_api_pattern, timeout=20000) as meta_info:
             page.goto(quote_url, wait_until="domcontentloaded", timeout=20000)
 
+        # Procesar respuesta de SRRI y TER
         srri_response = srri_info.value
         if srri_response.ok:
             srri_data = srri_response.json()
-            # CORRECCIÓN CLAVE: Multiplicamos el valor del TER por 100
             ter_value = srri_data.get("onGoingCharge") or srri_data.get("totalExpenseRatio")
             if ter_value is not None:
                 metadata['ter'] = float(ter_value) * 100
                 print(f"  -> ✅ TER capturado: {metadata['ter']:.2f}%")
-            
             srri = srri_data.get("srri")
             if srri is not None:
                 metadata['srri'] = int(srri)
                 print(f"  -> ✅ SRRI capturado: {metadata['srri']}")
 
+        # Procesar respuesta de Categoría
+        category_response = category_info.value
+        if category_response.ok:
+            category_data = category_response.json()
+            category_name = category_data.get("globalCategoryName")
+            if category_name:
+                metadata['morningstar_category'] = category_name
+                print(f"  -> ✅ Categoría encontrada: {metadata['morningstar_category']}")
+        
+        # Procesar respuesta de Metadatos (Domicilio y Moneda)
+        meta_response = meta_info.value
+        if meta_response.ok:
+            meta_data = meta_response.json()
+            metadata['domicilio'] = meta_data.get("domicileCountryId")
+            metadata['currency'] = meta_data.get("baseCurrencyId")
+            print(f"  -> ✅ Domicilio encontrado: {metadata['domicilio']}")
+            print(f"  -> ✅ Moneda encontrada: {metadata['currency']}")
+
+
     except Exception as e:
-        print(f"  -> ⚠️ Aviso: No se pudo capturar la API de Cotización. Error: {e}")
+        print(f"  -> ⚠️ Aviso: No se pudo capturar alguna API en 'Cotización'. Error: {e}")
 
     # --- Paso 3: Ir a la página de Matriz para datos de la Gestora ---
     try:
@@ -101,26 +124,7 @@ def scrape_fund_data(page: Page, isin: str) -> dict | None:
     except Exception as e:
         print(f"  -> ⚠️ Aviso: No se pudo capturar la API de la Gestora. Error: {e}")
 
-
-    # --- Paso 4 (Opcional): Scraping HTML como fallback ---
-    try:
-        html_content = page.content()
-        soup = BeautifulSoup(html_content, 'html.parser')
-        labels = soup.find_all("span", class_="sal-dp-value")
-        values = soup.find_all("span", class_="sal-dp-data")
-
-        for label, value in zip(labels, values):
-            label_text = label.get_text(strip=True)
-            value_text = value.get_text(strip=True)
-
-            if "Categoría Morningstar" in label_text: metadata.setdefault('morningstar_category', value_text)
-            if "Domicilio" in label_text: metadata.setdefault('domicilio', value_text)
-            if "Gestora" in label_text: metadata.setdefault('gestora', value_text)
-
-    except Exception as e:
-        print(f"  -> ⚠️ Aviso: No se pudieron extraer metadatos del HTML. Error: {e}")
-
-    # --- Paso 5: Obtener precios desde la página de Gráfico ---
+    # --- Paso 4: Obtener precios desde la página de Gráfico ---
     prices_df = None
     try:
         print("  -> Navegando a 'Gráfico' para obtener precios...")

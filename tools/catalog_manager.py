@@ -40,19 +40,34 @@ def save_fund_data(conn, metadata, prices_df):
     print(f"     ISIN: {metadata.get('isin')}, TER: {metadata.get('ter')}, Gestora: {metadata.get('gestora')}, SRRI: {metadata.get('srri')}")
     try:
         with conn.cursor() as cursor:
+            # CORREGIDO: La sentencia SQL ahora coincide con la tabla optimizada
             sql_query = """
-                INSERT INTO funds (isin, performance_id, security_id, name, ter, morningstar_category, gestora, domicilio, srri, lead_manager, lead_manager_start_date)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO funds (isin, performance_id, security_id, name, ter, morningstar_category, gestora, domicilio, srri, currency)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (isin) DO UPDATE SET
-                    performance_id = EXCLUDED.performance_id, security_id = EXCLUDED.security_id, name = EXCLUDED.name,
-                    ter = EXCLUDED.ter, morningstar_category = EXCLUDED.morningstar_category, gestora = EXCLUDED.gestora,
-                    domicilio = EXCLUDED.domicilio, srri = EXCLUDED.srri, lead_manager = EXCLUDED.lead_manager,
-                    lead_manager_start_date = EXCLUDED.lead_manager_start_date, last_updated_metadata = NOW();
+                    performance_id = EXCLUDED.performance_id,
+                    security_id = EXCLUDED.security_id,
+                    name = EXCLUDED.name,
+                    ter = EXCLUDED.ter,
+                    morningstar_category = EXCLUDED.morningstar_category,
+                    gestora = EXCLUDED.gestora,
+                    domicilio = EXCLUDED.domicilio,
+                    srri = EXCLUDED.srri,
+                    currency = EXCLUDED.currency, 
+                    last_updated_metadata = NOW();
             """
+            # CORREGIDO: La tupla de datos ahora coincide con la sentencia SQL
             data_tuple = (
-                metadata.get('isin'), metadata.get('performance_id'), metadata.get('security_id'), metadata.get('name'),
-                metadata.get('ter'), metadata.get('morningstar_category'), metadata.get('gestora'), metadata.get('domicilio'),
-                metadata.get('srri'), metadata.get('lead_manager'), metadata.get('lead_manager_start_date')
+                metadata.get('isin'),
+                metadata.get('performance_id'),
+                metadata.get('security_id'),
+                metadata.get('name'),
+                metadata.get('ter'),
+                metadata.get('morningstar_category'),
+                metadata.get('gestora'),
+                metadata.get('domicilio'),
+                metadata.get('srri'),
+                metadata.get('currency')
             )
             cursor.execute(sql_query, data_tuple)
             if prices_df is not None and not prices_df.empty:
@@ -74,12 +89,13 @@ def calculate_and_save_metrics(conn, isin: str, prices_df: pd.DataFrame):
         return
 
     print("  -> Calculando métricas para los diferentes horizontes...")
-
+    
     # Preparamos los datos para el cálculo
+    # Hacemos una copia para no modificar el DataFrame original
     prices_df_copy = prices_df.copy()
     prices_df_copy.set_index('date', inplace=True)
     daily_returns = prices_df_copy['nav'].pct_change().dropna()
-
+    
     metrics_to_insert = []
     for horizonte in HORIZONTE_OPCIONES:
         filtered_returns = filtrar_por_horizonte(pd.DataFrame(daily_returns), horizonte)['nav']
@@ -112,7 +128,7 @@ def calculate_and_save_metrics(conn, isin: str, prices_df: pd.DataFrame):
                 VALUES %s
                 ON CONFLICT (isin, horizon) DO UPDATE SET
                     annualized_return_pct = EXCLUDED.annualized_return_pct, cumulative_return_pct = EXCLUDED.cumulative_return_pct,
-                    volatility_pct = EXCLUDED.volatility_pct, sharpe_ratio = EXCLUDED.sharpe_ratio,
+                    volatility_pct = EXCLUDED.volatility_pct, sharpe_ratio = EXcluded.sharpe_ratio,
                     sortino_ratio = EXCLUDED.sortino_ratio, max_drawdown_pct = EXCLUDED.max_drawdown_pct,
                     last_calculated = NOW();
                 """,
@@ -130,34 +146,39 @@ def main():
     parser.add_argument('--source-json', type=str, help="Ruta a un fichero JSON con una lista de ISINs para añadir/actualizar.")
     parser.add_argument('--process-requests', action='store_true', help="Procesa las peticiones pendientes de la tabla asset_requests.")
     parser.add_argument('--update-existing', action='store_true', help="Refresca los datos de todos los fondos existentes en el catálogo.")
+    # NUEVO ARGUMENTO
+    parser.add_argument('--update-isin', type=str, help="Actualiza los datos de un único fondo especificado por su ISIN.")
     args = parser.parse_args()
-
-    # (La lógica de carga de ISINs no cambia)
-    # ...
-    conn = get_db_connection()
-    if not conn: exit()
 
     isins_to_process = []
     request_map = {}
-
-    if args.source_json:
+    
+    # LÓGICA DE CARGA DE ISINs MODIFICADA
+    if args.update_isin:
+        print(f"Se procesará un único ISIN: {args.update_isin}")
+        isins_to_process = [args.update_isin]
+    elif args.source_json:
         print(f"Cargando ISINs desde {args.source_json}...")
         with open(args.source_json) as f:
             isins_to_process = json.load(f)
     elif args.process_requests:
         print("Buscando peticiones de fondos pendientes...")
+        conn = get_db_connection()
+        if not conn: exit()
         requests = get_pending_requests(conn)
         for req in requests:
             isins_to_process.append(req['isin'])
             request_map[req['isin']] = req['id']
+        conn.close()
     elif args.update_existing:
         print("Buscando todos los fondos existentes para actualizar...")
+        conn = get_db_connection()
+        if not conn: exit()
         isins_to_process = get_existing_funds(conn)
+        conn.close()
     else:
         print("No se especificó ninguna tarea. Usa --help para ver las opciones.")
         exit()
-
-    conn.close()
 
     if not isins_to_process:
         print("No hay fondos que procesar. Finalizando.")
