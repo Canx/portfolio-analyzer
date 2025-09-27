@@ -4,7 +4,6 @@ import numpy as np
 import plotly.express as px
 from pathlib import Path
 import json
-from streamlit_local_storage import LocalStorage
 
 # --- CONFIGURACIÓN DE PÁGINA (Debe ser lo primero) ---
 st.set_page_config(
@@ -14,7 +13,7 @@ st.set_page_config(
 )
 
 # Importaciones de funciones compartidas
-from src.utils import load_funds_from_db  # <-- ¡SIMPLIFICADO!
+from src.utils import load_funds_from_db
 from src.data_manager import request_new_fund
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
 from src.auth import page_init_and_auth, logout_user
@@ -36,12 +35,11 @@ with st.sidebar:
         st.rerun()
 
 # --- LÓGICA DE LA PÁGINA ---
-localS = LocalStorage()
 st.title("🔎 Explorador de Fondos del Catálogo")
 
 col1, col2 = st.columns([4, 1])
 with col1:
-    st.write("Aquí puedes ver, filtrar y solicitar nuevos fondos para el catálogo.")
+    st.write("Aquí puedes buscar, filtrar y analizar el catálogo completo de fondos.")
 with col2:
     if st.button("🔄 Recargar Catálogo", help="Vuelve a leer la base de datos"):
         st.cache_data.clear()
@@ -57,7 +55,28 @@ with st.expander("➕ Solicitar nuevo fondo por ISIN"):
             if request_new_fund(new_isin, user_id):
                 st.rerun()
 
-# --- CARGA DE DATOS Y FILTROS ---
+# --- CARGA DE DATOS ---
+@st.cache_data
+def load_data_with_metrics(selected_horizon: str):
+    conn = get_db_connection()
+    if not conn: return pd.DataFrame()
+    try:
+        query = """
+            SELECT
+                f.isin, f.name, f.ter, f.gestora, f.domicilio, f.srri, f.morningstar_category,
+                m.annualized_return_pct, m.volatility_pct, m.sharpe_ratio
+            FROM funds f
+            LEFT JOIN fund_metrics m ON f.isin = m.isin AND m.horizon = %(horizon)s
+        """
+        df = pd.read_sql(query, conn, params={"horizon": selected_horizon})
+        # Limpieza de datos
+        df['ter'] = pd.to_numeric(df['ter'], errors='coerce')
+        df['srri'] = pd.to_numeric(df['srri'], errors='coerce')
+        return df
+    finally:
+        if conn: conn.close()
+
+# --- FILTROS EN LA SIDEBAR ---
 st.sidebar.header("Filtros del Explorador")
 horizonte = st.sidebar.selectbox(
     "Horizonte temporal para métricas",
@@ -66,131 +85,100 @@ horizonte = st.sidebar.selectbox(
     key="horizonte_fondos"
 )
 
-@st.cache_data
-def load_data_with_metrics(selected_horizon: str):
-    conn = get_db_connection()
-    if not conn: return pd.DataFrame()
-    try:
-        query = """
-            SELECT
-                f.*, 
-                m.annualized_return_pct, m.cumulative_return_pct,
-                m.volatility_pct, m.sharpe_ratio,
-                m.sortino_ratio, m.max_drawdown_pct
-            FROM funds f
-            LEFT JOIN fund_metrics m ON f.isin = m.isin AND m.horizon = %(horizon)s
-        """
-        df = pd.read_sql(query, conn, params={"horizon": selected_horizon})
-        return df
-    finally:
-        if conn: conn.close()
-
 df_display = load_data_with_metrics(horizonte)
 
 if df_display.empty:
     st.warning("Aún no hay fondos en el catálogo o el worker de métricas no se ha ejecutado.")
     st.stop()
 
-df_display['ter'] = pd.to_numeric(df_display['ter'], errors='coerce')
-
-# (Filtros no cambian, solo los nombres de las columnas)
-if 'gestora' in df_display.columns:
-    gestoras = sorted(df_display["gestora"].dropna().unique())
-    selected_gestoras = st.sidebar.multiselect("Filtrar por Gestora", gestoras, default=[])
-else:
-    selected_gestoras = []
-
-search_term = st.sidebar.text_input("Buscar por nombre")
-
-# --- FILTRADO DE DATOS ---
+# --- FILTROS AVANZADOS ---
 df_filtered = df_display.copy()
-if search_term:
-    df_filtered = df_filtered[df_filtered["name"].str.contains(search_term, case=False)]
 
+# Filtros de texto
+gestoras = sorted(df_filtered["gestora"].dropna().unique())
+selected_gestoras = st.sidebar.multiselect("Gestora", gestoras)
+if selected_gestoras:
+    df_filtered = df_filtered[df_filtered["gestora"].isin(selected_gestoras)]
+
+domicilios = sorted(df_filtered["domicilio"].dropna().unique())
+selected_domicilios = st.sidebar.multiselect("Domicilio", domicilios)
+if selected_domicilios:
+    df_filtered = df_filtered[df_filtered["domicilio"].isin(selected_domicilios)]
+
+categorias = sorted(df_filtered["morningstar_category"].dropna().unique())
+selected_categorias = st.sidebar.multiselect("Categoría Morningstar", categorias)
+if selected_categorias:
+    df_filtered = df_filtered[df_filtered["morningstar_category"].isin(selected_categorias)]
+
+# Filtros numéricos con sliders
+min_srri, max_srri = st.sidebar.slider(
+    'Rango de SRRI',
+    min_value=int(df_filtered['srri'].min()),
+    max_value=int(df_filtered['srri'].max()),
+    value=(int(df_filtered['srri'].min()), int(df_filtered['srri'].max()))
+)
+df_filtered = df_filtered[df_filtered['srri'].between(min_srri, max_srri)]
+
+max_ter = st.sidebar.slider('TER máximo (%)', 0.0, 5.0, 5.0, 0.01)
+df_filtered = df_filtered[df_filtered['ter'] <= max_ter]
+
+min_rentabilidad, max_rentabilidad = st.sidebar.slider(
+    'Rentabilidad Anual (%)', -50.0, 100.0, (-50.0, 100.0), 0.5
+)
+df_filtered = df_filtered[df_filtered['annualized_return_pct'].between(min_rentabilidad, max_rentabilidad)]
+
+max_volatilidad = st.sidebar.slider('Volatilidad máxima (%)', 0.0, 100.0, 100.0, 0.5)
+df_filtered = df_filtered[df_filtered['volatility_pct'] <= max_volatilidad]
+
+# --- BÚSQUEDA RÁPIDA (TEXTO) ---
 st.markdown("---")
-st.subheader("Lista de Fondos")
+search_term = st.text_input("🔎 Búsqueda rápida por Nombre o ISIN", placeholder="Escribe para filtrar...")
+if search_term:
+    df_filtered = df_filtered[
+        df_filtered["name"].str.contains(search_term, case=False, na=False) |
+        df_filtered["isin"].str.contains(search_term, case=False, na=False)
+    ]
+
+# --- VISUALIZACIÓN DE LA TABLA ---
 st.write(f"Mostrando **{len(df_filtered)}** de **{len(df_display)}** fondos.")
 
-# --- CONTROLES DE ORDENACIÓN (NOMBRES DE COLUMNA ACTUALIZADOS) ---
-sort_options = {
-    "Rentabilidad Anual": "annualized_return_pct",
-    "Ratio Sharpe": "sharpe_ratio",
-    "Ratio Sortino": "sortino_ratio",
-    "Volatilidad": "volatility_pct",
-    "TER": "ter",
-    "Nombre": "name",
-}
+# --- LÓGICA DE SELECCIÓN Y ACCIONES ---
+df_filtered['seleccionar'] = False
+df_editable = st.data_editor(
+    df_filtered,
+    column_config={
+        "seleccionar": st.column_config.CheckboxColumn(required=True),
+        "name": st.column_config.TextColumn("Nombre", width="large"),
+        "ter": st.column_config.NumberColumn("TER (%)", format="%.2f%%"),
+        "annualized_return_pct": st.column_config.NumberColumn(f"Rent. {horizonte} (%)", format="%.2f%%"),
+        "volatility_pct": st.column_config.NumberColumn(f"Vol. {horizonte} (%)", format="%.2f%%"),
+        "sharpe_ratio": st.column_config.NumberColumn(f"Sharpe {horizonte}", format="%.2f"),
+    },
+    use_container_width=True,
+    hide_index=True,
+    key="df_editor"
+)
 
-col1_sort, col2_sort = st.columns(2)
-with col1_sort:
-    sort_by_name = st.selectbox("Ordenar por", options=list(sort_options.keys()), index=0)
-    sort_by_col = sort_options[sort_by_name]
-with col2_sort:
-    sort_order_name = st.selectbox("Orden", options=["Descendente", "Ascendente"])
-    sort_ascending = (sort_order_name == "Ascendente")
-df_sorted = df_filtered.sort_values(by=sort_by_col, ascending=sort_ascending, na_position='last')
+selected_rows = df_editable[df_editable['seleccionar']]
+selected_isins = selected_rows['isin'].tolist()
 
-# --- CABECERA (NOMBRES DE COLUMNA ACTUALIZADOS) ---
-header_cols = st.columns((3, 1.5, 1, 1, 1, 1, 1, 1, 1, 1.5, 1.5))
-header_cols[0].markdown("**Nombre**")
-header_cols[1].markdown("**ISIN**")
-header_cols[2].markdown(f"**Rent. (%)**")
-header_cols[3].markdown(f"**Vol. (%)**")
-header_cols[4].markdown("**Sharpe**")
-header_cols[5].markdown("**Sortino**")
-header_cols[6].markdown("**TER (%)**")
-header_cols[7].markdown("**Gestora**")
-header_cols[8].markdown("**SRRI**")
-header_cols[9].markdown("**Añadir Cartera**")
-header_cols[10].markdown("**Comparar**")
-
-# Lógica para leer la comparación
-saved_comp_json = localS.getItem('saved_comparison')
-fondos_en_comparador = []
-if saved_comp_json:
-    try:
-        fondos_en_comparador = json.loads(saved_comp_json).get('fondos', [])
-    except (json.JSONDecodeError, TypeError):
-        pass
-
-active_portfolio_name = st.session_state.get("cartera_activa")
-isins_in_active_portfolio = []
-if active_portfolio_name:
-    isins_in_active_portfolio = st.session_state.carteras.get(active_portfolio_name, {}).get("pesos", {}).keys()
-
-# --- BUCLE DE VISUALIZACIÓN (NOMBRES DE COLUMNA ACTUALIZADOS) ---
-for index, row in df_sorted.iterrows():
-    cols = st.columns((3, 1.5, 1, 1, 1, 1, 1, 1, 1, 1.5, 1.5))
-    isin_actual = row.get('isin')
-
-    with cols[0]: st.markdown(f"**{row.get('name', 'N/A')}**")
-    with cols[1]: st.code(isin_actual)
-    with cols[2]: st.write(f"{row.get('annualized_return_pct', 0):.2f}" if pd.notna(row.get('annualized_return_pct')) else "N/A")
-    with cols[3]: st.write(f"{row.get('volatility_pct', 0):.2f}" if pd.notna(row.get('volatility_pct')) else "N/A")
-    with cols[4]: st.write(f"{row.get('sharpe_ratio', 0):.2f}" if pd.notna(row.get('sharpe_ratio')) else "N/A")
-    with cols[5]: st.write(f"{row.get('sortino_ratio', 0):.2f}" if pd.notna(row.get('sortino_ratio')) else "N/A")
-    with cols[6]: st.write(f"{row.get('ter', 0):.2f}" if pd.notna(row.get('ter')) else "N/A")
-    with cols[7]: st.write(row.get('gestora', 'N/A'))
-    with cols[8]: st.write(f"{row.get('srri', 'N/A')}")
-    with cols[9]:
-        if isin_actual in isins_in_active_portfolio:
-            st.success("✔️")
-        else:
-            if st.button("➕", key=f"add_explorer_{isin_actual}", help=f"Añadir a '{active_portfolio_name}'"):
-                if active_portfolio_name:
-                    st.session_state.carteras[active_portfolio_name]['pesos'][isin_actual] = 0
-                    st.rerun()
-                else:
-                    st.warning("Crea o selecciona una cartera primero.")
-
-    with cols[10]:
-        if isin_actual in fondos_en_comparador:
-            st.success("✔️ añadido")
-        else:
-            if st.button("⚖️", key=f"compare_{isin_actual}", help="Añadir al comparador"):
-                if isin_actual not in fondos_en_comparador:
-                    fondos_en_comparador.append(isin_actual)
-                    current_comp = {"carteras": [], "fondos": fondos_en_comparador}
-                    localS.setItem('saved_comparison', json.dumps(current_comp))
-                    st.toast(f"'{row.get('name')}' añadido al comparador.")
-                    st.rerun()
+if selected_isins:
+    st.info(f"Has seleccionado {len(selected_isins)} fondo(s).")
+    active_portfolio_name = st.session_state.get("cartera_activa")
+    
+    col_acc1, col_acc2, _ = st.columns([2, 2, 4])
+    with col_acc1:
+        if st.button("➕ Añadir a Cartera Activa", disabled=not active_portfolio_name):
+            if active_portfolio_name:
+                for isin in selected_isins:
+                    if isin not in st.session_state.carteras[active_portfolio_name]['pesos']:
+                         st.session_state.carteras[active_portfolio_name]['pesos'][isin] = 0
+                st.toast(f"{len(selected_isins)} fondo(s) añadidos a '{active_portfolio_name}'")
+                st.rerun()
+            else:
+                st.warning("Crea o selecciona una cartera primero.")
+    
+    with col_acc2:
+        if st.button("⚖️ Añadir al Comparador"):
+            # Lógica para añadir al comparador (requiere LocalStorage o una gestión de estado similar)
+            st.info("Funcionalidad para añadir al comparador pendiente de implementar.")
