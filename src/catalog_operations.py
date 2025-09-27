@@ -8,17 +8,14 @@ import json
 
 def scrape_fund_data(page: Page, isin: str) -> dict | None:
     """
-    Función de scraping DEFINITIVA. Usa una espera concurrente (Promise.all) para
-    navegar y capturar la respuesta de la API de forma fiable, eliminando
-    condiciones de carrera.
+    Función de scraping DEFINITIVA. Usa el performanceId para navegar y el securityId
+    para interceptar las llamadas a la API correctas, asegurando la captura de datos.
     """
     performance_id = None
     security_id = None
-    ter_from_api = None
-    srri_from_api = None
     metadata = {}
 
-    # --- Paso 1: Buscar el fondo para obtener sus IDs (sin cambios) ---
+    # --- Paso 1: Buscar el fondo para obtener sus IDs ---
     def handle_search_route(route: Route):
         nonlocal performance_id, security_id, metadata
         response = route.fetch()
@@ -56,57 +53,59 @@ def scrape_fund_data(page: Page, isin: str) -> dict | None:
         print(f"  -> No se pudo encontrar el ID necesario para {isin}.")
         return None
 
-    # --- Paso 2: NAVEGAR y ESPERAR LA RESPUESTA DE FORMA CONCURRENTE ---
+    # --- Paso 2: Ir a la página de Cotización para TER y SRRI ---
     try:
-        print(f"  -> Navegando y esperando las APIs de TER y SRRI simultáneamente...")
-
-        # URL de la página a la que vamos a navegar
         quote_url = f"https://global.morningstar.com/es/inversiones/fondos/{performance_id}/cotizacion"
-
-        # Patrón de la URL de la API que queremos capturar para el TER
-        ter_api_pattern = f"**/sal-service/v1/fund/price/costProjection/{security_id}/data**"
-
-        # Patrón de la URL de la API que queremos capturar para el SRRI
         srri_api_pattern = f"**/sal-service/v1/fund/quote/v7/{security_id}/data**"
 
-        # Ejecutamos ambas acciones en paralelo
-        with page.expect_response(ter_api_pattern, timeout=20000) as ter_response_info, \
-             page.expect_response(srri_api_pattern, timeout=20000) as srri_response_info:
+        print(f"  -> Navegando a 'Cotización' para obtener TER y SRRI...")
+        with page.expect_response(srri_api_pattern, timeout=20000) as srri_info:
             page.goto(quote_url, wait_until="domcontentloaded", timeout=20000)
 
-        # Cuando ambas han terminado, procesamos las respuestas capturadas
-        ter_response = ter_response_info.value
-        if ter_response.ok:
-            ter_data = ter_response.json()
-            ter = ter_data.get("ongoingCostsOtherCosts")
-            if ter is not None:
-                print(f"  -> ✅ ¡Éxito! TER capturado de la red: {ter}%")
-                ter_from_api = float(ter)
-
-        metadata['ter'] = ter_from_api
-
-        srri_response = srri_response_info.value
+        srri_response = srri_info.value
         if srri_response.ok:
             srri_data = srri_response.json()
+            # CORRECCIÓN CLAVE: Multiplicamos el valor del TER por 100
+            ter_value = srri_data.get("onGoingCharge") or srri_data.get("totalExpenseRatio")
+            if ter_value is not None:
+                metadata['ter'] = float(ter_value) * 100
+                print(f"  -> ✅ TER capturado: {metadata['ter']:.2f}%")
+            
             srri = srri_data.get("srri")
             if srri is not None:
-                print(f"  -> ✅ ¡Éxito! SRRI capturado de la red: {srri}")
-                srri_from_api = int(srri)
-
-        metadata['srri'] = srri_from_api
+                metadata['srri'] = int(srri)
+                print(f"  -> ✅ SRRI capturado: {metadata['srri']}")
 
     except Exception as e:
-        print(f"  -> ⚠️  Aviso: No se pudo capturar alguna de las APIs. Se usará scraping como fallback. Error: {e}")
+        print(f"  -> ⚠️ Aviso: No se pudo capturar la API de Cotización. Error: {e}")
 
-
-    # --- Paso 3: Extraer el resto de metadatos del HTML ---
+    # --- Paso 3: Ir a la página de Matriz para datos de la Gestora ---
     try:
-        # Damos un respiro extra para que el JavaScript renderice todo
-        page.wait_for_timeout(2000)
+        matriz_url = f"https://global.morningstar.com/es/inversiones/fondos/{performance_id}/matriz"
+        manager_api_pattern = f"**/sal-service/v1/fund/parent/parentSummary/{security_id}/data**"
+
+        print(f"  -> Navegando a 'Matriz' para obtener datos de la Gestora...")
+        with page.expect_response(manager_api_pattern, timeout=20000) as manager_info:
+            page.goto(matriz_url, wait_until="domcontentloaded", timeout=20000)
+
+        manager_response = manager_info.value
+        if manager_response.ok:
+            manager_data = manager_response.json()
+            firm_name = manager_data.get("firmName")
+            if firm_name:
+                metadata['gestora'] = firm_name
+                print(f"  -> ✅ Gestora encontrada: {metadata['gestora']}")
+        else:
+             print(f"  -> Respuesta no OK de la API de Gestora: {manager_response.status}")
+
+    except Exception as e:
+        print(f"  -> ⚠️ Aviso: No se pudo capturar la API de la Gestora. Error: {e}")
+
+
+    # --- Paso 4 (Opcional): Scraping HTML como fallback ---
+    try:
         html_content = page.content()
         soup = BeautifulSoup(html_content, 'html.parser')
-
-        # Lógica de scraping (fallback)
         labels = soup.find_all("span", class_="sal-dp-value")
         values = soup.find_all("span", class_="sal-dp-data")
 
@@ -114,29 +113,20 @@ def scrape_fund_data(page: Page, isin: str) -> dict | None:
             label_text = label.get_text(strip=True)
             value_text = value.get_text(strip=True)
 
-            if "Categoría Morningstar" in label_text:
-                metadata['morningstar_category'] = value_text
-            elif "TER" in label_text and metadata.get('ter') is None:
-                ter_match = re.search(r'(\d+\.?\d*)', value_text)
-                if ter_match:
-                    print(f"  -> TER obtenido por scraping (fallback): {ter_match.group(1)}%")
-                    metadata['ter'] = float(ter_match.group(1))
-            elif "Domicilio" in label_text:
-                metadata['domicilio'] = value_text
-            elif "Gestora" in label_text:
-                metadata['gestora'] = value_text
-
-        print("  -> Metadatos detallados extraídos.")
+            if "Categoría Morningstar" in label_text: metadata.setdefault('morningstar_category', value_text)
+            if "Domicilio" in label_text: metadata.setdefault('domicilio', value_text)
+            if "Gestora" in label_text: metadata.setdefault('gestora', value_text)
 
     except Exception as e:
-        print(f"  -> ⚠️ Aviso: No se pudieron extraer los metadatos del HTML. Error: {e}")
+        print(f"  -> ⚠️ Aviso: No se pudieron extraer metadatos del HTML. Error: {e}")
 
-    # --- Pasos 4 y 5 (Obtener precios y devolver datos) no cambian ---
+    # --- Paso 5: Obtener precios desde la página de Gráfico ---
     prices_df = None
     try:
+        print("  -> Navegando a 'Gráfico' para obtener precios...")
+        graph_url = f"https://global.morningstar.com/es/inversiones/fondos/{performance_id}/grafico"
         with page.expect_response("**/chartservice/v2/timeseries**", timeout=15000) as ts_response_info:
-            url = f"https://global.morningstar.com/es/inversiones/fondos/{performance_id}/grafico"
-            page.goto(url, wait_until="domcontentloaded")
+            page.goto(graph_url, wait_until="domcontentloaded")
 
         timeseries_data = ts_response_info.value.json()
         if timeseries_data and isinstance(timeseries_data, list) and timeseries_data[0].get('series'):
@@ -145,10 +135,11 @@ def scrape_fund_data(page: Page, isin: str) -> dict | None:
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
                 prices_df = df[['date', 'nav']]
+                print("  -> ✅ Precios históricos obtenidos.")
     except Exception as e:
         print(f"  -> ❌ Error al cargar la página o datos del gráfico: {e}")
 
-    if metadata and prices_df is not None:
+    if 'isin' in metadata and prices_df is not None:
         return {"metadata": metadata, "prices": prices_df}
     else:
         print("  -> Fallo al recopilar la información completa del fondo.")

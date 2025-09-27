@@ -41,17 +41,18 @@ def save_fund_data(conn, metadata, prices_df):
     try:
         with conn.cursor() as cursor:
             sql_query = """
-                INSERT INTO funds (isin, performance_id, security_id, name, ter, morningstar_category, gestora, domicilio, srri)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO funds (isin, performance_id, security_id, name, ter, morningstar_category, gestora, domicilio, srri, lead_manager, lead_manager_start_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (isin) DO UPDATE SET
                     performance_id = EXCLUDED.performance_id, security_id = EXCLUDED.security_id, name = EXCLUDED.name,
                     ter = EXCLUDED.ter, morningstar_category = EXCLUDED.morningstar_category, gestora = EXCLUDED.gestora,
-                    domicilio = EXCLUDED.domicilio, srri = EXCLUDED.srri, last_updated_metadata = NOW();
+                    domicilio = EXCLUDED.domicilio, srri = EXCLUDED.srri, lead_manager = EXCLUDED.lead_manager,
+                    lead_manager_start_date = EXCLUDED.lead_manager_start_date, last_updated_metadata = NOW();
             """
             data_tuple = (
                 metadata.get('isin'), metadata.get('performance_id'), metadata.get('security_id'), metadata.get('name'),
                 metadata.get('ter'), metadata.get('morningstar_category'), metadata.get('gestora'), metadata.get('domicilio'),
-                metadata.get('srri')
+                metadata.get('srri'), metadata.get('lead_manager'), metadata.get('lead_manager_start_date')
             )
             cursor.execute(sql_query, data_tuple)
             if prices_df is not None and not prices_df.empty:
@@ -68,15 +69,16 @@ def calculate_and_save_metrics(conn, isin: str, prices_df: pd.DataFrame):
     """
     Calcula las métricas para todos los horizontes y las guarda en la tabla 'fund_metrics'.
     """
-    if prices_df.empty or len(prices_df) < 2:
+    if prices_df is None or prices_df.empty or len(prices_df) < 2:
         print("  -> No hay suficientes datos de precios para calcular métricas.")
         return
 
     print("  -> Calculando métricas para los diferentes horizontes...")
 
     # Preparamos los datos para el cálculo
-    prices_df.set_index('date', inplace=True)
-    daily_returns = prices_df['nav'].pct_change().dropna()
+    prices_df_copy = prices_df.copy()
+    prices_df_copy.set_index('date', inplace=True)
+    daily_returns = prices_df_copy['nav'].pct_change().dropna()
 
     metrics_to_insert = []
     for horizonte in HORIZONTE_OPCIONES:
