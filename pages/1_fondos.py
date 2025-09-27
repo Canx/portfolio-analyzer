@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 from pathlib import Path
 import json
+from streamlit_local_storage import LocalStorage
 
 # --- CONFIGURACIÓN DE PÁGINA (Debe ser lo primero) ---
 st.set_page_config(
@@ -35,7 +36,9 @@ with st.sidebar:
         st.rerun()
 
 # --- LÓGICA DE LA PÁGINA ---
+localS = LocalStorage()
 st.title("🔎 Explorador de Fondos del Catálogo")
+
 
 col1, col2 = st.columns([4, 1])
 with col1:
@@ -180,5 +183,28 @@ if selected_isins:
     
     with col_acc2:
         if st.button("⚖️ Añadir al Comparador"):
-            # Lógica para añadir al comparador (requiere LocalStorage o una gestión de estado similar)
-            st.info("Funcionalidad para añadir al comparador pendiente de implementar.")
+            # Leer la comparación actual del LocalStorage
+            saved_comp_json = localS.getItem('saved_comparison')
+            current_comp = {"carteras": [], "fondos": []}
+            if saved_comp_json:
+                try:
+                    current_comp = json.loads(saved_comp_json)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            
+            # Añadir los ISINs seleccionados (sin duplicados)
+            fondos_en_comparador = set(current_comp.get('fondos', []))
+            fondos_anadidos = 0
+            for isin in selected_isins:
+                if isin not in fondos_en_comparador:
+                    fondos_en_comparador.add(isin)
+                    fondos_anadidos += 1
+
+            # Guardar la nueva comparación
+            current_comp['fondos'] = list(fondos_en_comparador)
+            localS.setItem('saved_comparison', json.dumps(current_comp))
+            
+            if fondos_anadidos > 0:
+                st.toast(f"¡{fondos_anadidos} fondo(s) añadidos al comparador!", icon="⚖️")
+            else:
+                st.toast("Los fondos seleccionados ya estaban en el comparador.", icon="✔️")
