@@ -5,6 +5,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import re
 import json
+import time
 
 def scrape_fund_data(page: Page, isin: str) -> dict | None:
     """
@@ -54,6 +55,7 @@ def scrape_fund_data(page: Page, isin: str) -> dict | None:
         return None
 
     # --- Paso 2: Ir a la página de Cotización para capturar todas las APIs ---
+    time.sleep(5)
     try:
         quote_url = f"https://global.morningstar.com/es/inversiones/fondos/{performance_id}/cotizacion"
         srri_api_pattern = f"**/sal-service/v1/fund/quote/v7/{security_id}/data**"
@@ -103,6 +105,7 @@ def scrape_fund_data(page: Page, isin: str) -> dict | None:
         print(f"  -> ⚠️ Aviso: No se pudo capturar alguna API en 'Cotización'. Error: {e}")
 
     # --- Paso 3: Ir a la página de Matriz para datos de la Gestora ---
+    time.sleep(5)
     try:
         matriz_url = f"https://global.morningstar.com/es/inversiones/fondos/{performance_id}/matriz"
         manager_api_pattern = f"**/sal-service/v1/fund/parent/parentSummary/{security_id}/data**"
@@ -126,6 +129,7 @@ def scrape_fund_data(page: Page, isin: str) -> dict | None:
 
     # --- Paso 4: Obtener precios desde la página de Gráfico ---
     prices_df = None
+    time.sleep(5)
     try:
         print("  -> Navegando a 'Gráfico' para obtener precios...")
         graph_url = f"https://global.morningstar.com/es/inversiones/fondos/{performance_id}/grafico"
