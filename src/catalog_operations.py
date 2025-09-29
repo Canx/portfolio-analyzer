@@ -2,26 +2,30 @@
 
 from playwright.sync_api import Page, Route, expect
 import pandas as pd
-from bs4 import BeautifulSoup
 import re
 import json
 import time
+from datetime import datetime
 
 def scrape_fund_data(page: Page, isin: str) -> dict | None:
     """
-    Función de scraping DEFINITIVA. Usa el performanceId para navegar y el securityId
-    para interceptar las llamadas a la API correctas, asegurando la captura de datos.
+    Función de scraping robusta y definitiva para Morningstar.
     """
     performance_id = None
     security_id = None
     metadata = {}
 
-    # --- Paso 1: Buscar el fondo para obtener sus IDs ---
+    # --- PASO 1: Búsqueda inicial ---
     def handle_search_route(route: Route):
         nonlocal performance_id, security_id, metadata
         response = route.fetch()
+        # Estas sentencias de depuración son críticas para la sincronización.
+        # No las elimines.
+        # print(f"--- DEBUG: Search API Response Status: {response.status} ---")
         try:
-            data = response.json()
+            response_text = response.text()
+            # print(f"--- DEBUG: Search API Response Text: {response_text[:100]} ... ---")
+            data = json.loads(response_text)
             if data.get('results'):
                 result = data['results'][0]
                 performance_id = result['meta'].get('performanceID')
@@ -32,109 +36,88 @@ def scrape_fund_data(page: Page, isin: str) -> dict | None:
                     'performance_id': performance_id,
                     'security_id': security_id
                 })
-                print(f"  -> PerformanceID encontrado: {performance_id}")
-                print(f"  -> SecurityID encontrado: {security_id}")
-        except Exception: pass
+        except Exception:
+            pass # Ignorar errores de parseo si la respuesta no es JSON
+        
         route.fulfill(response=response)
 
     try:
+        print("  -> Realizando búsqueda inicial...")
         page.route("**/api/v1/es/search/securities**", handle_search_route)
         page.goto("https://www.morningstar.es/", wait_until="domcontentloaded", timeout=60000)
+
+        role_button = page.get_by_role("button", name="Soy un Inversor Individual")
+        if role_button.is_visible():
+            role_button.click()
+
         search_box = page.locator('input[placeholder="Buscar cotizaciones"]')
         search_box.wait_for(timeout=15000)
         search_box.fill(isin)
         page.wait_for_timeout(5000)
-    except Exception as e:
-        print(f"  -> ❌ Error durante la búsqueda inicial: {e}")
-        return None
-    finally:
         page.unroute("**/api/v1/es/search/securities**")
 
-    if not performance_id or not security_id:
-        print(f"  -> No se pudo encontrar el ID necesario para {isin}.")
+    except Exception as e:
+        print(f"  -> ❌ Error en la búsqueda inicial: {e}")
         return None
 
-    # --- Paso 2: Ir a la página de Cotización para capturar todas las APIs ---
-    time.sleep(5)
+    if not security_id:
+        print(f"  -> No se pudo encontrar el SecurityID necesario para {isin}.")
+        return None
+    print(f"  -> ✅ SecurityID encontrado: {security_id}")
+
+    # --- PASO 2: Obtención de Metadatos ---
     try:
-        quote_url = f"https://global.morningstar.com/es/inversiones/fondos/{performance_id}/cotizacion"
+        print("  -> Obteniendo metadatos...")
+        quote_url = f"https://global.morningstar.com/es/inversiones/fondos/{metadata['performance_id']}/cotizacion"
         srri_api_pattern = f"**/sal-service/v1/fund/quote/v7/{security_id}/data**"
         category_api_pattern = f"**/sal-service/v1/fund/esgRisk/{security_id}/data**"
-        # NUEVO: Patrón para la API de metadatos (domicilio y moneda)
         meta_api_pattern = f"**/sal-service/v1/fund/securityMetaData/{security_id}**"
 
-        print(f"  -> Navegando a 'Cotización' para obtener todos los metadatos...")
         with page.expect_response(srri_api_pattern, timeout=20000) as srri_info, \
              page.expect_response(category_api_pattern, timeout=20000) as category_info, \
              page.expect_response(meta_api_pattern, timeout=20000) as meta_info:
-            page.goto(quote_url, wait_until="domcontentloaded", timeout=20000)
+            page.goto(quote_url, wait_until="domcontentloaded")
 
-        # Procesar respuesta de SRRI y TER
-        srri_response = srri_info.value
-        if srri_response.ok:
-            srri_data = srri_response.json()
-            ter_value = srri_data.get("onGoingCharge") or srri_data.get("totalExpenseRatio")
-            if ter_value is not None:
-                metadata['ter'] = float(ter_value) * 100
-                print(f"  -> ✅ TER capturado: {metadata['ter']:.2f}%")
-            srri = srri_data.get("srri")
-            if srri is not None:
-                metadata['srri'] = int(srri)
-                print(f"  -> ✅ SRRI capturado: {metadata['srri']}")
-
-        # Procesar respuesta de Categoría
-        category_response = category_info.value
-        if category_response.ok:
-            category_data = category_response.json()
-            category_name = category_data.get("globalCategoryName")
-            if category_name:
-                metadata['morningstar_category'] = category_name
-                print(f"  -> ✅ Categoría encontrada: {metadata['morningstar_category']}")
+        srri_data = srri_info.value.json()
+        metadata['ter'] = float(srri_data.get("onGoingCharge") or srri_data.get("totalExpenseRatio", 0)) * 100
+        metadata['srri'] = int(srri_data.get("srri", 0))
+        category_data = category_info.value.json()
+        metadata['morningstar_category'] = category_data.get("globalCategoryName")
+        meta_data = meta_info.value.json()
+        metadata['domicilio'] = meta_data.get("domicileCountryId")
+        metadata['currency'] = meta_data.get("baseCurrencyId")
         
-        # Procesar respuesta de Metadatos (Domicilio y Moneda)
-        meta_response = meta_info.value
-        if meta_response.ok:
-            meta_data = meta_response.json()
-            metadata['domicilio'] = meta_data.get("domicileCountryId")
-            metadata['currency'] = meta_data.get("baseCurrencyId")
-            print(f"  -> ✅ Domicilio encontrado: {metadata['domicilio']}")
-            print(f"  -> ✅ Moneda encontrada: {metadata['currency']}")
-
+        matriz_url = f"https://global.morningstar.com/es/inversiones/fondos/{metadata['performance_id']}/matriz"
+        with page.expect_response(f"**/sal-service/v1/fund/parent/parentSummary/{security_id}/data**", timeout=20000) as manager_info:
+            page.goto(matriz_url, wait_until="domcontentloaded")
+        
+        manager_data = manager_info.value.json()
+        metadata['gestora'] = manager_data.get("firmName")
+        print("  -> ✅ Metadatos obtenidos.")
 
     except Exception as e:
-        print(f"  -> ⚠️ Aviso: No se pudo capturar alguna API en 'Cotización'. Error: {e}")
+        print(f"  -> ⚠️ Aviso: No se pudieron obtener todos los metadatos. Error: {e}")
 
-    # --- Paso 3: Ir a la página de Matriz para datos de la Gestora ---
-    time.sleep(5)
-    try:
-        matriz_url = f"https://global.morningstar.com/es/inversiones/fondos/{performance_id}/matriz"
-        manager_api_pattern = f"**/sal-service/v1/fund/parent/parentSummary/{security_id}/data**"
-
-        print(f"  -> Navegando a 'Matriz' para obtener datos de la Gestora...")
-        with page.expect_response(manager_api_pattern, timeout=20000) as manager_info:
-            page.goto(matriz_url, wait_until="domcontentloaded", timeout=20000)
-
-        manager_response = manager_info.value
-        if manager_response.ok:
-            manager_data = manager_response.json()
-            firm_name = manager_data.get("firmName")
-            if firm_name:
-                metadata['gestora'] = firm_name
-                print(f"  -> ✅ Gestora encontrada: {metadata['gestora']}")
-        else:
-             print(f"  -> Respuesta no OK de la API de Gestora: {manager_response.status}")
-
-    except Exception as e:
-        print(f"  -> ⚠️ Aviso: No se pudo capturar la API de la Gestora. Error: {e}")
-
-    # --- Paso 4: Obtener precios desde la página de Gráfico ---
+    # --- PASO 3: Obtención de Precios Históricos (Lógica de Doble Captura con Predicado) ---
     prices_df = None
-    time.sleep(5)
     try:
-        print("  -> Navegando a 'Gráfico' para obtener precios...")
-        graph_url = f"https://global.morningstar.com/es/inversiones/fondos/{performance_id}/grafico"
-        with page.expect_response("**/chartservice/v2/timeseries**", timeout=15000) as ts_response_info:
-            page.goto(graph_url, wait_until="domcontentloaded")
+        print("  -> Obteniendo precios históricos...")
+        graph_url = f"https://global.morningstar.com/es/inversiones/fondos/{metadata['performance_id']}/grafico"
+        page.goto(graph_url, wait_until="domcontentloaded", timeout=20000)
+
+        page.get_by_text("PERÍODO", exact=True).wait_for(timeout=20000)
+
+        period_select = page.locator('select.mds-select__input___markets').first
+        frequency_select = page.locator('select.mds-select__input___markets').nth(1)
+
+        print("  -> Seleccionando período y frecuencia...")
+        with page.expect_response(
+            lambda response: "chartservice/v2/timeseries" in response.url and "frequency=d" in response.url,
+            timeout=20000
+        ) as ts_response_info:
+            period_select.select_option("max")
+            page.wait_for_timeout(1000)
+            frequency_select.select_option("d")
 
         timeseries_data = ts_response_info.value.json()
         if timeseries_data and isinstance(timeseries_data, list) and timeseries_data[0].get('series'):
@@ -143,12 +126,20 @@ def scrape_fund_data(page: Page, isin: str) -> dict | None:
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
                 prices_df = df[['date', 'nav']]
-                print("  -> ✅ Precios históricos obtenidos.")
+                num_navs = len(prices_df)
+                start_date = prices_df['date'].min().strftime('%Y-%m-%d')
+                end_date = prices_df['date'].max().strftime('%Y-%m-%d')
+                print(f"  -> ✅ {num_navs} NAVs obtenidos desde {start_date} hasta {end_date}.")
     except Exception as e:
-        print(f"  -> ❌ Error al cargar la página o datos del gráfico: {e}")
+        print(f"  -> ❌ Error al obtener los precios: {e}")
 
+    # --- PASO 4: Devolver resultado ---
     if 'isin' in metadata and prices_df is not None:
         return {"metadata": metadata, "prices": prices_df}
     else:
+        if prices_df is not None:
+            metadata['isin'] = isin
+            return {"metadata": metadata, "prices": prices_df}
+        
         print("  -> Fallo al recopilar la información completa del fondo.")
         return None

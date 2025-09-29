@@ -117,8 +117,6 @@ with st.spinner(f"Cargando datos de precios para {len(todos_los_isines)} fondos 
 if all_navs_df.empty:
     st.error("No se pudieron cargar los datos de los fondos para la comparación."); st.stop()
 
-filtered_navs = filtrar_por_horizonte(all_navs_df, horizonte)
-
 # --- Bucle de Cálculo ---
 lista_metricas = []
 navs_a_graficar = {}
@@ -127,6 +125,11 @@ returns_a_correlacionar = {} # <-- NUEVO: Diccionario para guardar las rentabili
 # 1. Procesar las carteras compuestas
 for nombre_cartera in carteras_seleccionadas:
     pesos = st.session_state.carteras[nombre_cartera].get("pesos", {})
+    # Filtramos el DataFrame para quedarnos solo con los ISINs de esta cartera
+    isin_cartera = list(pesos.keys())
+    navs_cartera = all_navs_df[isin_cartera].dropna(how='all')
+    filtered_navs = filtrar_por_horizonte(navs_cartera, horizonte)
+
     portfolio_obj = Portfolio(nav_data=filtered_navs, weights=pesos)
     nombre_display = f"💼 {nombre_cartera}"
     if portfolio_obj.daily_returns is not None and len(portfolio_obj.daily_returns.dropna()) > 1:
@@ -138,6 +141,10 @@ for nombre_cartera in carteras_seleccionadas:
 
 # 2. Procesar los fondos individuales
 for isin in fondos_seleccionados_isines:
+    # Creamos un DF solo para este ISIN y eliminamos NaNs al final
+    nav_fondo = all_navs_df[[isin]].dropna()
+    filtered_navs = filtrar_por_horizonte(nav_fondo, horizonte)
+    
     pesos = {isin: 100}
     portfolio_obj = Portfolio(nav_data=filtered_navs, weights=pesos)
     nombre_display = mapa_isin_nombre.get(isin, isin)

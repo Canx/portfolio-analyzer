@@ -66,7 +66,7 @@ def load_data_with_metrics(selected_horizon: str):
     try:
         query = """
             SELECT
-                f.isin, f.name, f.ter, f.gestora, f.domicilio, f.srri, f.morningstar_category, f.currency,
+                f.isin, f.name, f.ter, f.gestora, f.domicilio, f.srri, f.morningstar_category, f.currency, f.performance_id,
                 m.annualized_return_pct, m.volatility_pct, m.sharpe_ratio
             FROM funds f
             LEFT JOIN fund_metrics m ON f.isin = m.isin AND m.horizon = %(horizon)s
@@ -94,6 +94,11 @@ df_display = load_data_with_metrics(horizonte)
 if df_display.empty:
     st.warning("Aún no hay fondos en el catálogo o el worker de métricas no se ha ejecutado.")
     st.stop()
+
+# --- Crear enlace a Morningstar ---
+df_display['morningstar_url'] = df_display['performance_id'].apply(
+    lambda pid: f"https://global.morningstar.com/es/inversiones/fondos/{pid}/cotizacion" if pd.notna(pid) else None
+)
 
 # --- FILTROS AVANZADOS ---
 df_filtered = df_display.copy()
@@ -146,7 +151,7 @@ def create_dynamic_slider(df, column_name, label, min_val=None, max_val=None, st
 
 df_filtered = create_dynamic_slider(df_filtered, 'srri', 'Rango de SRRI')
 df_filtered = create_dynamic_slider(df_filtered, 'ter', 'Rango de TER (%)', step=0.01)
-df_filtered = create_dynamic_slider(df_filtered, 'annualized_return_pct', 'Rentabilidad Anual (%)', step=0.5)
+df_filtered = create_dynamic_slider(df_filtered, 'annualized_return_pct', 'Rentabilidad Anualizada (%)', step=0.5)
 df_filtered = create_dynamic_slider(df_filtered, 'volatility_pct', 'Volatilidad (%)', step=0.5)
 df_filtered = create_dynamic_slider(df_filtered, 'sharpe_ratio', 'Rango de Ratio de Sharpe', step=0.1)
 
@@ -166,14 +171,17 @@ st.write(f"Mostrando **{len(df_filtered)}** de **{len(df_display)}** fondos.")
 df_filtered['seleccionar'] = False
 df_editable = st.data_editor(
     df_filtered,
+    column_order=("seleccionar", "name", "morningstar_url", "ter", "annualized_return_pct", "volatility_pct", "sharpe_ratio"),
     column_config={
         "seleccionar": st.column_config.CheckboxColumn(required=True),
         "name": st.column_config.TextColumn("Nombre", width="large"),
+        "morningstar_url": st.column_config.LinkColumn("Enlace Morningstar", width="small"),
         "ter": st.column_config.NumberColumn("TER (%)", format="%.2f%%"),
-        "annualized_return_pct": st.column_config.NumberColumn(f"Rent. {horizonte} (%)", format="%.2f%%"),
+        "annualized_return_pct": st.column_config.NumberColumn(f"Rent. Anual {horizonte} (%)", format="%.2f%%"),
         "volatility_pct": st.column_config.NumberColumn(f"Vol. {horizonte} (%)", format="%.2f%%"),
         "sharpe_ratio": st.column_config.NumberColumn(f"Sharpe {horizonte}", format="%.2f"),
         "currency": "Moneda",
+        "performance_id": None # Ocultar esta columna
     },
     use_container_width=True,
     hide_index=True,

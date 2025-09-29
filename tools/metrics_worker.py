@@ -46,15 +46,23 @@ for isin in funds_df['isin']:
     if fund_prices.empty or len(fund_prices) < 2:
         continue
 
-    daily_returns = fund_prices.pct_change().dropna()
+    fund_prices_df = pd.DataFrame(fund_prices)
+
+    # --- Remuestrear a diario para consistencia con el comparador ---
+    daily_index = pd.date_range(start=fund_prices_df.index.min(), end=fund_prices_df.index.max(), freq='D')
+    resampled_prices = fund_prices_df.reindex(daily_index).ffill()
 
     for horizonte in HORIZONTE_OPCIONES:
-        filtered_returns = filtrar_por_horizonte(pd.DataFrame(daily_returns), horizonte)['nav']
-        
-        if len(filtered_returns) < 2:
+        # 1. Filtrar los precios REMUESTREADOS por el horizonte temporal
+        filtered_prices = filtrar_por_horizonte(resampled_prices, horizonte)['nav']
+        if len(filtered_prices) < 2:
             continue
 
+        # 2. Calcular los retornos sobre los precios ya filtrados y remuestreados
+        filtered_returns = filtered_prices.pct_change().dropna()
+
         metrics = calcular_metricas_desde_rentabilidades(filtered_returns)
+
         
         all_metrics_to_insert.append((
             isin,
