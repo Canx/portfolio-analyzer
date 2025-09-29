@@ -14,6 +14,47 @@ from src.utils import load_funds_from_db, load_all_navs
 import plotly.express as px
 import plotly.graph_objects as go
 
+
+@st.dialog("Añadir Fondos a la Cartera")
+def add_fund_dialog(mapa_nombre_isin, pesos_actuales):
+    """
+    Renderiza un diálogo modal para buscar y añadir fondos a la cartera.
+    """
+    search_term = st.text_input("Buscar por Nombre o ISIN", key="fund_search_dialog")
+
+    # Filtrar candidatos que no están ya en la cartera
+    if search_term:
+        candidatos = [
+            nombre for nombre in mapa_nombre_isin.keys()
+            if (search_term.lower() in nombre.lower()) and (mapa_nombre_isin[nombre] not in pesos_actuales)
+        ]
+    else:
+        # Mostrar una lista limitada si no hay búsqueda para no sobrecargar
+        candidatos = [
+            nombre for nombre in list(mapa_nombre_isin.keys())[:200] # Limitar a 200 resultados sin busqueda
+            if mapa_nombre_isin[nombre] not in pesos_actuales
+        ]
+
+    if not candidatos and search_term:
+        st.warning("No se encontraron fondos con ese criterio o ya están en la cartera.")
+
+    fondos_seleccionados = st.multiselect(
+        "Selecciona los fondos que quieres añadir:",
+        options=candidatos,
+        help="Puedes seleccionar varios fondos."
+    )
+
+    if st.button("➕ Añadir Selección", use_container_width=True):
+        for fondo_nombre in fondos_seleccionados:
+            isin = mapa_nombre_isin[fondo_nombre]
+            if isin not in pesos_actuales:
+                pesos_actuales[isin] = 0
+        st.rerun()
+
+    if st.button("Cerrar", use_container_width=True):
+        st.rerun()
+
+
 def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre, horizonte):
     """
     Renderiza el contenido principal.
@@ -239,11 +280,8 @@ def render_analysis_sidebar(mapa_nombre_isin, mapa_isin_nombre):
         st.header(f"💼 Composición de '{cartera_activa_nombre}'")
         pesos_actuales = st.session_state.carteras[cartera_activa_nombre]['pesos']
         
-        candidatos = [n for n in mapa_nombre_isin.keys() if mapa_nombre_isin[n] not in pesos_actuales.keys()]
-        add_sel = st.selectbox("Añadir fondo a la cartera", ["—"] + candidatos, index=0)
-        if add_sel != "—" and st.button("➕ Añadir"):
-            pesos_actuales[mapa_nombre_isin[add_sel]] = 0
-            st.rerun()
+        if st.button("➕ Añadir Fondo a la Cartera", use_container_width=True):
+            add_fund_dialog(mapa_nombre_isin, pesos_actuales)
 
         for isin in sorted(pesos_actuales.keys()):
             col_name, col_slider, col_del = st.columns([3, 6, 1])
@@ -272,7 +310,7 @@ def render_analysis_sidebar(mapa_nombre_isin, mapa_isin_nombre):
         else:
             st.info("La optimización es una funcionalidad Premium.")
             if st.button("✨ Mejorar a Premium"):
-                st.switch_page("pages/4_Mi_Cuenta.py")
+                st.switch_page("pages/4_cuenta.py")
                 
     return horizonte, run_optimization, modelo_seleccionado, risk_measure, target_return
 
