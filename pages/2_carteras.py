@@ -2,6 +2,7 @@
 
 import streamlit as st
 import pandas as pd
+from streamlit_local_storage import LocalStorage
 from src.auth import page_init_and_auth, logout_user
 from src.database import save_user_data
 from src.portfolio import Portfolio
@@ -21,7 +22,8 @@ if not st.session_state.get("logged_in", False):
 with st.sidebar:
     st.write(f"Usuario: {st.session_state.user_info.get('email')}")
     if st.button("Cerrar Sesión"):
-        logout_user()
+        localS = LocalStorage()
+        logout_user(localS)
         st.rerun()
     
     st.markdown("---")

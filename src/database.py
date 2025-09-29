@@ -56,3 +56,20 @@ def save_user_data(db, auth, user_info, data_key, data):
             st.stop()
         else:
             st.error(f"Error al guardar los datos de '{data_key}': {e}")
+
+def update_user_subscription(db, user_id, new_plan):
+    """
+    Actualiza el plan de suscripción de un usuario en la base de datos.
+    Requiere una conexión 'db' con privilegios de administrador.
+    """
+    if not db or not user_id:
+        return False
+    try:
+        path = f"users/{user_id}/profile"
+        data_to_update = {"subscription_plan": new_plan}
+        db.child(path).update(data_to_update)
+        print(f"✅ Plan de suscripción actualizado a '{new_plan}' para el usuario {user_id}.")
+        return True
+    except Exception as e:
+        print(f"🔥 ERROR al actualizar la suscripción para el usuario {user_id}: {e}")
+        return False

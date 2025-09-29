@@ -10,7 +10,7 @@ from src.utils import load_all_navs, load_funds_from_db
 from src.data_manager import DataManager, filtrar_por_horizonte
 from src.portfolio import Portfolio
 from src.config import HORIZONTE_OPCIONES, HORIZONTE_DEFAULT_INDEX
-from src.auth import logout_user, page_init_and_auth
+from src.auth import page_init_and_auth, logout_user
 
 auth, db = page_init_and_auth()
 
@@ -25,7 +25,7 @@ if not st.session_state.get("logged_in", False):
 with st.sidebar:
     st.write(f"Usuario: {st.session_state.user_info.get('email')}")
     if st.button("Cerrar Sesión"):
-        logout_user()
+        logout_user(localS)
         st.switch_page("app.py")
 
 st.set_page_config(

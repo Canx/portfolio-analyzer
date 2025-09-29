@@ -14,18 +14,6 @@ def page_init_and_auth():
     Función única para ser llamada al principio de CADA página.
     """
     localS = LocalStorage()
-    
-    # --- LÓGICA DE LOGOUT (NUEVA) ---
-    # Si estamos en proceso de logout, limpiamos todo y paramos.
-    if st.session_state.get("logout_in_progress"):
-        st.session_state.clear() # Limpia TODA la memoria de la sesión
-        localS.setItem("firebase_refreshToken", None)
-        st.session_state.logout_complete = True # Marcamos que hemos terminado
-        
-    # Si acabamos de terminar el logout, hacemos un último rerun para refrescar
-    if st.session_state.get("logout_complete"):
-        del st.session_state.logout_complete
-        st.rerun()
 
     if 'local_storage_ready' not in st.session_state:
         st.session_state.local_storage_ready = False
@@ -42,6 +30,14 @@ def page_init_and_auth():
     return auth, db
 
 def check_persistent_login(auth, db, localS):
+    logout_flag = localS.getItem("logout_flag")
+    if logout_flag == "true":
+        # El usuario ha cerrado sesión activamente.
+        # Limpiamos la bandera y el token, y no procedemos con el login.
+        localS.setItem("logout_flag", None)
+        localS.setItem("firebase_refreshToken", None)
+        return
+
     token = localS.getItem("firebase_refreshToken")
     if token:
         try:
@@ -74,6 +70,8 @@ def login_user(auth, db, email, password):
         user_info = { "email": user['email'], "uid": user['localId'], "idToken": user['idToken'], "refreshToken": user['refreshToken'] }
         
         localS.setItem("firebase_refreshToken", user['refreshToken'])
+        # Nos aseguramos de que la bandera de logout esté limpia al iniciar sesión
+        localS.setItem("logout_flag", None)
         
         # Cargamos el perfil completo
         profile_data = load_user_data(db, user_info, "profile")
@@ -115,11 +113,14 @@ def signup_user(auth, db, email, password, confirm_password):
     except Exception as e:
         st.error(f"Error al crear la cuenta: {e}")
 
-def logout_user():
+def logout_user(localS):
     """
-    Inicia el proceso de logout. Solo pone una bandera.
+    Limpia la sesión del servidor y establece la bandera de logout en el navegador.
     """
-    st.session_state.logout_in_progress = True
+    st.session_state.clear()
+    localS.setItem("logout_flag", "true")
+    st.toast("Has cerrado sesión.", icon="👋")
+
 
 def initialize_firebase():
     try:
@@ -133,4 +134,31 @@ def initialize_firebase():
         return None, None
     except Exception as e:
         st.error(f"Error al inicializar Firebase: {e}")
+        return None, None
+
+def initialize_firebase_admin():
+    """
+    Inicializa la app de Firebase con credenciales de administrador
+    usando una cuenta de servicio.
+    """
+    try:
+        with open('config.yaml') as file:
+            config = yaml.safe_load(file)
+        
+        firebase_config = config['firebase']
+        # Añadimos la cuenta de servicio a la configuración
+        firebase_config["serviceAccount"] = "firebase-service-account.json"
+        
+        # Inicializamos la app con privilegios de admin
+        firebase = pyrebase.initialize_app(firebase_config)
+        
+        print("✅ Conexión de administrador a Firebase inicializada.")
+        return firebase.auth(), firebase.database()
+        
+    except FileNotFoundError as e:
+        print(f"🔥 ERROR: No se encontró el fichero de configuración: {e}")
+        print("🔥 Asegúrate de que 'config.yaml' y 'firebase-service-account.json' existen.")
+        return None, None
+    except Exception as e:
+        print(f"🔥 ERROR al inicializar Firebase Admin: {e}")
         return None, None

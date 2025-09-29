@@ -217,6 +217,7 @@ __marimo__/
 
 # Custom config files
 config.yaml
+firebase-service-account.json
 
 # 
 .env

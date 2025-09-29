@@ -13,3 +13,5 @@ Pyrebase4
 playwright
 dotenv
 psycopg2-binary
+stripe
+flask

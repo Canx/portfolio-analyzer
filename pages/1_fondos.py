@@ -32,7 +32,8 @@ if not st.session_state.get("logged_in", False):
 with st.sidebar:
     st.write(f"Usuario: {st.session_state.user_info.get('email')}")
     if st.button("Cerrar Sesión"):
-        logout_user()
+        localS = LocalStorage()
+        logout_user(localS)
         st.rerun()
 
 # --- LÓGICA DE LA PÁGINA ---

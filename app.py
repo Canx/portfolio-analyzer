@@ -3,6 +3,7 @@
 import streamlit as st
 from src.state import initialize_session_state
 from src.auth import login_user, signup_user, logout_user, page_init_and_auth
+from streamlit_local_storage import LocalStorage
 
 
 st.set_page_config(page_title="Analizador de Carteras", page_icon="📊", layout="wide")
@@ -44,5 +45,6 @@ else:
         """
     )
     if st.button("Cerrar Sesión"):
-        logout_user()
+        localS = LocalStorage()
+        logout_user(localS)
         st.rerun()
