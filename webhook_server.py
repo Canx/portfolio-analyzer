@@ -4,7 +4,7 @@ import stripe
 from flask import Flask, request, Response
 from src.config import STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
 from src.auth import initialize_firebase_admin
-from src.database import update_user_subscription
+from src.database import update_user_profile
 
 # --- INICIALIZACIÓN ---
 app = Flask(__name__)
@@ -48,13 +48,17 @@ def stripe_webhook():
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
         client_reference_id = session.get('client_reference_id')
+        subscription_id = session.get('subscription')
         
-        if client_reference_id:
-            print(f"🔔 Pago exitoso para el usuario: {client_reference_id}")
+        if client_reference_id and subscription_id:
+            print(f"🔔 Pago exitoso para el usuario: {client_reference_id}, Suscripción: {subscription_id}")
             
             if db_admin:
-                # Actualizamos el plan del usuario a 'premium'
-                success = update_user_subscription(db_admin, client_reference_id, "premium")
+                profile_update_data = {
+                    "subscription_plan": "premium",
+                    "stripe_subscription_id": subscription_id
+                }
+                success = update_user_profile(db_admin, client_reference_id, profile_update_data)
                 if not success:
                     # Si falla, devolvemos un error 500 para que Stripe pueda reintentar.
                     return Response(status=500)
@@ -63,7 +67,7 @@ def stripe_webhook():
                 return Response(status=500)
 
         else:
-            print("⚠️ Recibido 'checkout.session.completed' sin 'client_reference_id'")
+            print("⚠️ Recibido 'checkout.session.completed' sin 'client_reference_id' o 'subscription'")
 
     else:
         print(f"Unhandled event type {event['type']}")

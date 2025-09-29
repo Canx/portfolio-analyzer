@@ -52,6 +52,7 @@ def check_persistent_login(auth, db, localS):
             # Cargamos el perfil completo
             profile_data = load_user_data(db, user_info, "profile")
             st.session_state.user_info["subscription_plan"] = profile_data.get("subscription_plan", "free")
+            st.session_state.user_info["stripe_subscription_id"] = profile_data.get("stripe_subscription_id")
             st.session_state.carteras = profile_data.get("carteras", {})
             
             if st.session_state.carteras:
@@ -76,6 +77,7 @@ def login_user(auth, db, email, password):
         # Cargamos el perfil completo
         profile_data = load_user_data(db, user_info, "profile")
         user_info["subscription_plan"] = profile_data.get("subscription_plan", "free")
+        user_info["stripe_subscription_id"] = profile_data.get("stripe_subscription_id")
         st.session_state.carteras = profile_data.get("carteras", {})
 
         st.session_state.user_info = user_info

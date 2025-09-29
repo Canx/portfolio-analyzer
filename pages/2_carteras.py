@@ -39,17 +39,27 @@ with st.sidebar:
 st.title("🗂️ Mis Carteras")
 st.write("Aquí puedes ver un resumen de todas tus carteras, crear nuevas o eliminar las existentes.")
 
-with st.expander("➕ Crear una nueva cartera"):
-    with st.form("form_create_portfolio"):
-        new_portfolio_name = st.text_input("Nombre de la nueva cartera")
-        submitted_create = st.form_submit_button("Crear Cartera")
-        if submitted_create and new_portfolio_name:
-            if new_portfolio_name in st.session_state.carteras:
-                st.warning("Ya existe una cartera con ese nombre.")
-            else:
-                st.session_state.carteras[new_portfolio_name] = {"pesos": {}}
-                st.toast(f"¡Cartera '{new_portfolio_name}' creada!")
-                st.rerun()
+user_plan = st.session_state.user_info.get("subscription_plan", "free")
+num_carteras = len(st.session_state.get("carteras", {}))
+
+# Lógica para limitar la creación de carteras en el plan gratuito
+if user_plan == "free" and num_carteras >= 1:
+    with st.expander("➕ Crear una nueva cartera", expanded=False):
+        st.info("El plan gratuito solo permite gestionar una cartera.")
+        if st.button("✨ Mejorar a Premium para crear más carteras"):
+            st.switch_page("pages/4_cuenta.py")
+else:
+    with st.expander("➕ Crear una nueva cartera"):
+        with st.form("form_create_portfolio"):
+            new_portfolio_name = st.text_input("Nombre de la nueva cartera")
+            submitted_create = st.form_submit_button("Crear Cartera")
+            if submitted_create and new_portfolio_name:
+                if new_portfolio_name in st.session_state.carteras:
+                    st.warning("Ya existe una cartera con ese nombre.")
+                else:
+                    st.session_state.carteras[new_portfolio_name] = {"pesos": {}}
+                    st.toast(f"¡Cartera '{new_portfolio_name}' creada!")
+                    st.rerun()
 
 st.markdown("---")
 
