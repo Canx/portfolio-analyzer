@@ -50,14 +50,21 @@ with col2:
         st.toast("Catálogo recargado desde la base de datos.")
         st.rerun()
 
+user_plan = st.session_state.user_info.get("subscription_plan", "free")
+
 with st.expander("➕ Solicitar nuevo fondo por ISIN"):
-    with st.form("form_add_fund_explorer"):
-        new_isin = st.text_input("Introduce un ISIN para solicitarlo", placeholder="Ej: IE00B4L5Y983").strip().upper()
-        submitted = st.form_submit_button("Enviar Solicitud")
-        if submitted and new_isin:
-            user_id = st.session_state.user_info['uid']
-            if request_new_fund(new_isin, user_id):
-                st.rerun()
+    if user_plan == "free":
+        st.info("La solicitud de nuevos fondos para añadir al catálogo es una funcionalidad Premium.")
+        if st.button("✨ Mejorar a Premium para solicitar fondos"):
+            st.switch_page("pages/4_cuenta.py")
+    else: # Premium user
+        with st.form("form_add_fund_explorer"):
+            new_isin = st.text_input("Introduce un ISIN para solicitarlo", placeholder="Ej: IE00B4L5Y983").strip().upper()
+            submitted = st.form_submit_button("Enviar Solicitud")
+            if submitted and new_isin:
+                user_id = st.session_state.user_info['uid']
+                if request_new_fund(new_isin, user_id):
+                    st.rerun()
 
 # --- CARGA DE DATOS ---
 @st.cache_data
@@ -68,7 +75,7 @@ def load_data_with_metrics(selected_horizon: str):
         query = """
             SELECT
                 f.isin, f.name, f.ter, f.gestora, f.domicilio, f.srri, f.morningstar_category, f.currency, f.performance_id,
-                m.annualized_return_pct, m.volatility_pct, m.sharpe_ratio
+                m.annualized_return_pct, m.volatility_pct, m.sharpe_ratio, m.sortino_ratio, m.calmar_ratio
             FROM funds f
             LEFT JOIN fund_metrics m ON f.isin = m.isin AND m.horizon = %(horizon)s
         """
@@ -155,6 +162,8 @@ df_filtered = create_dynamic_slider(df_filtered, 'ter', 'Rango de TER (%)', step
 df_filtered = create_dynamic_slider(df_filtered, 'annualized_return_pct', 'Rentabilidad Anualizada (%)', step=0.5)
 df_filtered = create_dynamic_slider(df_filtered, 'volatility_pct', 'Volatilidad (%)', step=0.5)
 df_filtered = create_dynamic_slider(df_filtered, 'sharpe_ratio', 'Rango de Ratio de Sharpe', step=0.1)
+df_filtered = create_dynamic_slider(df_filtered, 'sortino_ratio', 'Rango de Ratio de Sortino', step=0.1)
+df_filtered = create_dynamic_slider(df_filtered, 'calmar_ratio', 'Rango de Ratio de Calmar', step=0.1)
 
 # --- BÚSQUEDA RÁPIDA (TEXTO) ---
 st.markdown("---")
@@ -172,7 +181,7 @@ st.write(f"Mostrando **{len(df_filtered)}** de **{len(df_display)}** fondos.")
 df_filtered['seleccionar'] = False
 df_editable = st.data_editor(
     df_filtered,
-    column_order=("seleccionar", "name", "morningstar_url", "ter", "annualized_return_pct", "volatility_pct", "sharpe_ratio"),
+    column_order=("seleccionar", "name", "morningstar_url", "ter", "annualized_return_pct", "volatility_pct", "sharpe_ratio", "sortino_ratio", "calmar_ratio"),
     column_config={
         "seleccionar": st.column_config.CheckboxColumn(required=True),
         "name": st.column_config.TextColumn("Nombre", width="large"),
@@ -181,6 +190,8 @@ df_editable = st.data_editor(
         "annualized_return_pct": st.column_config.NumberColumn(f"Rent. Anual {horizonte} (%)", format="%.2f%%"),
         "volatility_pct": st.column_config.NumberColumn(f"Vol. {horizonte} (%)", format="%.2f%%"),
         "sharpe_ratio": st.column_config.NumberColumn(f"Sharpe {horizonte}", format="%.2f"),
+        "sortino_ratio": st.column_config.NumberColumn(f"Sortino {horizonte}", format="%.2f"),
+        "calmar_ratio": st.column_config.NumberColumn(f"Calmar {horizonte}", format="%.2f"),
         "currency": "Moneda",
         "performance_id": None # Ocultar esta columna
     },

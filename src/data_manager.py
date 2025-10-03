@@ -61,6 +61,9 @@ class DataManager:
             if df.empty:
                 st.warning(f"Aún no hay datos históricos para {isin}. El worker los descargará pronto.")
                 return None
+
+            # FIX: Asegurarse de que el índice es un DatetimeIndex
+            df.index = pd.to_datetime(df.index)
                 
             return df
         except Exception as e:

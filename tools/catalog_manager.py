@@ -4,6 +4,7 @@ import sys
 import os
 import json
 import argparse
+from datetime import datetime, date, timedelta, timezone
 from playwright.sync_api import sync_playwright
 import pandas as pd
 import time
@@ -18,6 +19,9 @@ from psycopg2.extras import execute_values
 from src.metrics import calcular_metricas_desde_rentabilidades
 from src.data_manager import filtrar_por_horizonte
 from src.config import HORIZONTE_OPCIONES
+
+METADATA_REFRESH_DAYS = int(os.getenv("CATALOG_METADATA_REFRESH_DAYS", "7"))
+PRICE_REFRESH_DAYS = int(os.getenv("CATALOG_PRICE_REFRESH_DAYS", "2"))
 
 # --- Lógica de Base de Datos (las 3 primeras funciones no cambian) ---
 def get_pending_requests(conn):
@@ -78,6 +82,78 @@ def save_fund_data(conn, metadata, prices_df):
     except Exception as e:
         print(f"  -> ❌ ERROR DE BASE DE DATOS al guardar metadatos/precios: {e}")
         conn.rollback()
+
+
+def _normalize_datetime(value):
+    if isinstance(value, datetime):
+        result = value
+    elif isinstance(value, date):
+        result = datetime.combine(value, datetime.min.time())
+    else:
+        return None
+
+    if result.tzinfo is not None:
+        result = result.astimezone(timezone.utc).replace(tzinfo=None)
+    return result
+
+
+def should_skip_fund(conn, isin: str) -> tuple[bool, str]:
+    metadata_ts = None
+    last_price_date = None
+
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT last_updated_metadata FROM funds WHERE isin = %s", (isin,))
+            metadata_row = cursor.fetchone()
+            if metadata_row:
+                metadata_ts = metadata_row[0]
+
+            cursor.execute("SELECT MAX(date) FROM historical_prices WHERE isin = %s", (isin,))
+            price_row = cursor.fetchone()
+            if price_row:
+                last_price_date = price_row[0]
+    except Exception as e:
+        conn.rollback()
+        return False, f"  -> ⚠️ No se pudo comprobar el estado previo de {isin}: {e}."
+
+    now_utc = datetime.utcnow()
+    today = date.today()
+
+    metadata_recent = False
+    if metadata_ts:
+        normalized = _normalize_datetime(metadata_ts)
+        if normalized:
+            metadata_recent = (now_utc - normalized) <= timedelta(days=METADATA_REFRESH_DAYS)
+
+    price_recent = False
+    if last_price_date:
+        if isinstance(last_price_date, datetime):
+            last_price_as_date = last_price_date.date()
+        else:
+            last_price_as_date = last_price_date
+        price_recent = (today - last_price_as_date) <= timedelta(days=PRICE_REFRESH_DAYS)
+
+    if metadata_recent and price_recent:
+        meta_text = metadata_ts.strftime('%Y-%m-%d %H:%M') if isinstance(metadata_ts, datetime) else str(metadata_ts)
+        price_text = last_price_as_date.strftime('%Y-%m-%d') if isinstance(last_price_as_date, date) else str(last_price_as_date)
+        return True, f"  -> Datos recientes para {isin} (metadata {meta_text}, último precio {price_text}). Saltando descarga."
+
+    reasons = []
+    if not metadata_recent:
+        if metadata_ts:
+            meta_text = metadata_ts.strftime('%Y-%m-%d %H:%M') if isinstance(metadata_ts, datetime) else str(metadata_ts)
+            reasons.append(f"metadata desactualizada ({meta_text})")
+        else:
+            reasons.append("sin metadata previa")
+    if not price_recent:
+        if last_price_date:
+            price_text = last_price_as_date.strftime('%Y-%m-%d') if isinstance(last_price_as_date, date) else str(last_price_as_date)
+            reasons.append(f"último precio {price_text}")
+        else:
+            reasons.append("sin precios previos")
+
+    reason_text = "; ".join(reasons)
+    return False, f"  -> Se actualizará {isin} porque {reason_text}."
 
 # --- NUEVA FUNCIÓN ---
 def calculate_and_save_metrics(conn, isin: str, prices_df: pd.DataFrame):
@@ -184,7 +260,34 @@ def main():
         print("No hay fondos que procesar. Finalizando.")
         exit()
 
-    print(f"Se procesarán {len(isins_to_process)} ISINs.")
+    print(f"Se encontraron {len(isins_to_process)} ISINs para analizar.")
+
+    filtered_isins = []
+    for isin in isins_to_process:
+        conn = get_db_connection()
+        if not conn:
+            print(f"  -> ⚠️ No se pudo conectar a la base de datos para verificar {isin}. Se procederá con el scraping.")
+            filtered_isins.append(isin)
+            continue
+
+        skip, message = should_skip_fund(conn, isin)
+        print(message)
+
+        if skip:
+            if isin in request_map:
+                update_request_status(conn, request_map[isin], 'processed')
+        else:
+            filtered_isins.append(isin)
+
+        conn.close()
+
+    isins_to_process = filtered_isins
+
+    if not isins_to_process:
+        print("Todos los fondos están actualizados. No se realizará scraping adicional.")
+        return
+
+    print(f"Se procesarán {len(isins_to_process)} ISINs tras filtrar los que ya estaban al día.")
 
 
     with sync_playwright() as p:

@@ -61,7 +61,8 @@ for isin in funds_df['isin']:
         # 2. Calcular los retornos sobre los precios ya filtrados y remuestreados
         filtered_returns = filtered_prices.pct_change().dropna()
 
-        metrics = calcular_metricas_desde_rentabilidades(filtered_returns)
+        # Asumimos una tasa libre de riesgo de 0.0 para el cálculo de métricas
+        metrics = calcular_metricas_desde_rentabilidades(filtered_returns, risk_free_rate=0.0)
 
         
         all_metrics_to_insert.append((
@@ -72,7 +73,8 @@ for isin in funds_df['isin']:
             metrics.get('volatility_ann_%'),
             metrics.get('sharpe_ann'),
             metrics.get('sortino_ann'),
-            metrics.get('max_drawdown_%')
+            metrics.get('max_drawdown_%'),
+            metrics.get('calmar_ratio')
         ))
 
 print(f"Se han calculado un total de {len(all_metrics_to_insert)} conjuntos de métricas.")
@@ -101,7 +103,7 @@ if all_metrics_to_insert:
             execute_values(
                 cursor,
                 """
-                INSERT INTO fund_metrics (isin, horizon, annualized_return_pct, cumulative_return_pct, volatility_pct, sharpe_ratio, sortino_ratio, max_drawdown_pct)
+                INSERT INTO fund_metrics (isin, horizon, annualized_return_pct, cumulative_return_pct, volatility_pct, sharpe_ratio, sortino_ratio, max_drawdown_pct, calmar_ratio)
                 VALUES %s
                 ON CONFLICT (isin, horizon) DO UPDATE SET
                     annualized_return_pct = EXCLUDED.annualized_return_pct,
@@ -110,6 +112,7 @@ if all_metrics_to_insert:
                     sharpe_ratio = EXCLUDED.sharpe_ratio,
                     sortino_ratio = EXCLUDED.sortino_ratio,
                     max_drawdown_pct = EXCLUDED.max_drawdown_pct,
+                    calmar_ratio = EXCLUDED.calmar_ratio,
                     last_calculated = NOW();
                 """,
                 cleaned_metrics # <-- Usamos la lista de datos limpios

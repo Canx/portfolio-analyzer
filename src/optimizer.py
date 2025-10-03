@@ -16,17 +16,26 @@ def optimize_portfolio(daily_returns: pd.DataFrame, model: str = 'HRP', risk_mea
 
     weights_df = None
     try:
-        if model == 'HRP':
+        if model in ['HRP', 'ERC']:
             port = rp.HCPortfolio(returns=daily_returns)
-            weights_df = port.optimization(
-                model='HRP',
-                codependence='pearson',
-                rm=risk_measure,
-                linkage='ward'
-            )
-        
-        # --- BLOQUE MODIFICADO ---
-        elif model in ['MV', 'MSR', 'MSoR']: # <-- Añadimos el nuevo modelo 'MSoR'
+            
+            if model == 'HRP':
+                weights_df = port.optimization(
+                    model='HRP',
+                    codependence='pearson',
+                    rm=risk_measure,
+                    linkage='ward'
+                )
+            elif model == 'ERC':
+                # Usamos HERC (Hierarchical Equal Risk Contribution) por ser más robusto
+                weights_df = port.optimization(
+                    model='HERC',
+                    codependence='pearson',
+                    rm='CVaR', # Mantenemos CVaR que es una medida de riesgo robusta
+                    linkage='ward'
+                )
+
+        elif model in ['MV', 'MSR', 'MSoR', 'MCR', 'CVaR']:
             port = rp.Portfolio(returns=daily_returns)
             port.assets_stats(method_mu='hist', method_cov='ledoit')
             
@@ -43,13 +52,25 @@ def optimize_portfolio(daily_returns: pd.DataFrame, model: str = 'HRP', risk_mea
                     obj='Sharpe',
                     rf=0.0
                 )
-            # --- NUEVA OPCIÓN DE OPTIMIZACIÓN ---
-            elif model == 'MSoR': # MSoR = Max Sortino Ratio
+            elif model == 'MSoR':
                 weights_df = port.optimization(
                     model='Classic',
-                    rm='MSV',        # <-- Usamos Semi-Varianza como medida de riesgo
-                    obj='Sharpe',    # <-- Maximizamos el ratio (Rentabilidad / Riesgo)
+                    rm='MSV',
+                    obj='Sharpe',
                     rf=0.0
+                )
+            elif model == 'MCR':
+                weights_df = port.optimization(
+                    model='Classic',
+                    rm='MDD',
+                    obj='Sharpe',
+                    rf=0.0
+                )
+            elif model == 'CVaR':
+                weights_df = port.optimization(
+                    model='Classic',
+                    rm='CVaR',
+                    obj='MinRisk'
                 )
         
         else:

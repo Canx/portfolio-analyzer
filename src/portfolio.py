@@ -48,11 +48,11 @@ class Portfolio:
         # 2. Reconstruimos el NAV empezando desde 100.
         return (1 + returns).cumprod() * 100
 
-    def calculate_metrics(self) -> dict:
+    def calculate_metrics(self, risk_free_rate: float = 0.0) -> dict:
         """Calcula las métricas de la cartera usando el módulo de métricas."""
         # Nos aseguramos de no incluir el primer NaN/0 en el cálculo de métricas
         returns_for_metrics = self.daily_returns.dropna()
-        metrics = calcular_metricas_desde_rentabilidades(returns_for_metrics)
+        metrics = calcular_metricas_desde_rentabilidades(returns_for_metrics, risk_free_rate=risk_free_rate)
         # El nombre ahora viene de fuera
         # metrics["nombre"] = "💼 Mi Cartera"
         return metrics

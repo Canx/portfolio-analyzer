@@ -95,7 +95,8 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre, 
                 "annualized_return_%": "Rent. Anual (%)",
                 "volatility_ann_%": "Volatilidad Anual (%)",
                 "sharpe_ann": "Ratio Sharpe",
-                "sortino_ann": "Ratio Sortino", # <-- NUEVA ETIQUETA
+                "sortino_ann": "Ratio Sortino",
+                "calmar_ratio": "Ratio Calmar", # <-- NUEVA ETIQUETA
                 "max_drawdown_%": "Caída Máxima (%)",
             }
         ).set_index("Nombre")[
@@ -103,7 +104,8 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre, 
                 "Rent. Anual (%)",
                 "Volatilidad Anual (%)",
                 "Ratio Sharpe",
-                "Ratio Sortino", # <-- NUEVA COLUMNA
+                "Ratio Sortino",
+                "Ratio Calmar", # <-- NUEVA COLUMNA
                 "Caída Máxima (%)",
             ]
         ]
@@ -113,7 +115,7 @@ def render_main_content(df_metrics, daily_returns, portfolio, mapa_isin_nombre, 
         # Añadimos el nuevo ratio al coloreado de la tabla
         st.dataframe(
             df_display.style.format("{:.2f}")
-                      .background_gradient(cmap='RdYlGn', subset=['Rent. Anual (%)', 'Ratio Sharpe', 'Ratio Sortino', 'Caída Máxima (%)'])
+                      .background_gradient(cmap='RdYlGn', subset=['Rent. Anual (%)', 'Ratio Sharpe', 'Ratio Sortino', 'Ratio Calmar', 'Caída Máxima (%)'])
                       .background_gradient(cmap='RdYlGn_r', subset=['Volatilidad Anual (%)']),
                       use_container_width=True # 
         )
@@ -306,8 +308,8 @@ def render_analysis_sidebar(mapa_nombre_isin, mapa_isin_nombre):
         st.markdown("---")
         st.subheader("⚖️ Optimización")
         if st.session_state.user_info.get("subscription_plan") == "premium":
-            opciones_optimizacion = ["MSR", "MSoR", "MV", "HRP"]
-            modelo_seleccionado = st.selectbox("Selecciona un modelo", opciones_optimizacion, index=0, format_func=lambda x: {"MSR": "Máximo Ratio de Sharpe", "MSoR": "Máximo Ratio de Sortino", "MV": "Mínima Volatilidad", "HRP": "Hierarchical Risk Parity"}[x])
+            opciones_optimizacion = ["MSR", "MSoR", "MCR", "MV", "HRP", "CVaR", "ERC"]
+            modelo_seleccionado = st.selectbox("Selecciona un modelo", opciones_optimizacion, index=0, format_func=lambda x: {"MSR": "Máximo Ratio de Sharpe", "MSoR": "Máximo Ratio de Sortino", "MCR": "Máximo Ratio de Calmar", "MV": "Mínima Volatilidad", "HRP": "Hierarchical Risk Parity", "CVaR": "Mínimo CVaR (Pérdida Esperada)", "ERC": "Contribución Equitativa al Riesgo (ERC)"}[x])
             run_optimization = st.button("🚀 Optimizar Cartera")
         else:
             st.info("La optimización es una funcionalidad Premium.")
@@ -413,15 +415,16 @@ df_metrics = pd.DataFrame(metricas)
 if 'isin' not in df_metrics.columns:
     df_metrics['isin'] = pd.Series(dtype='str')
 
-# 5. Calculamos las métricas de la cartera y las añadimos a la tabla
-portfolio = Portfolio(filtered_navs, pesos_cartera_activa)
-portfolio_metrics = {}
-if portfolio and portfolio.nav is not None:
-    metricas_cartera = portfolio.calculate_metrics()
-    metricas_cartera["name"] = f"💼 {cartera_activa_nombre}"
-    portfolio_metrics = metricas_cartera
-    df_metrics = pd.concat([pd.DataFrame([metricas_cartera]), df_metrics], ignore_index=True)
-
+    # 5. Calculamos las métricas de la cartera y las añadimos a la tabla
+    portfolio = Portfolio(filtered_navs, pesos_cartera_activa)
+    portfolio_metrics = {}
+    # Asumimos una tasa libre de riesgo de 0.0 para el cálculo de métricas de cartera
+    risk_free_rate_for_portfolio = 0.0
+    if portfolio and portfolio.nav is not None:
+        metricas_cartera = portfolio.calculate_metrics(risk_free_rate=risk_free_rate_for_portfolio)
+        metricas_cartera["name"] = f"💼 {cartera_activa_nombre}"
+        portfolio_metrics = metricas_cartera
+        df_metrics = pd.concat([pd.DataFrame([metricas_cartera]), df_metrics], ignore_index=True)
 # 5. Ordenamos la tabla para mostrar la cartera primero
 if not df_metrics.empty:
     df_metrics["peso_cartera"] = df_metrics["isin"].map(pesos_cartera_activa).fillna(0)
