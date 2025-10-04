@@ -28,7 +28,6 @@ if not conn:
 # 3. Preparar los datos para la inserción
 data_to_insert = []
 for fondo in fondos_data:
-    # Aseguramos que los campos numéricos sean válidos o None
     ter = pd.to_numeric(fondo.get('ter'), errors='coerce')
     ter = None if pd.isna(ter) else ter
     srri = pd.to_numeric(fondo.get('srri'), errors='coerce')
@@ -36,15 +35,15 @@ for fondo in fondos_data:
 
     data_to_insert.append((
         fondo.get('isin'),
-        fondo.get('performanceID'),
-        fondo.get('securityID'),
+        fondo.get('performanceId'),
+        fondo.get('securityId'),
         fondo.get('nombre'),
-        fondo.get('nombre_legal'),
         ter,
         fondo.get('morningstarCategory'),
         fondo.get('gestora'),
         fondo.get('domicilio'),
-        srri
+        srri,
+        fondo.get('currency')
     ))
 
 # 4. Insertar los datos en la tabla 'funds'
@@ -53,18 +52,18 @@ try:
         execute_values(
             cursor,
             """
-            INSERT INTO funds (isin, performance_id, security_id, name, nombre_legal, ter, morningstar_category, gestora, domicilio, srri)
+            INSERT INTO funds (isin, performance_id, security_id, name, ter, morningstar_category, gestora, domicilio, srri, currency)
             VALUES %s
             ON CONFLICT (isin) DO UPDATE SET
                 performance_id = EXCLUDED.performance_id,
                 security_id = EXCLUDED.security_id,
                 name = EXCLUDED.name,
-                nombre_legal = EXCLUDED.nombre_legal,
                 ter = EXCLUDED.ter,
                 morningstar_category = EXCLUDED.morningstar_category,
                 gestora = EXCLUDED.gestora,
                 domicilio = EXCLUDED.domicilio,
                 srri = EXCLUDED.srri,
+                currency = EXCLUDED.currency,
                 last_updated_metadata = NOW();
             """,
             data_to_insert

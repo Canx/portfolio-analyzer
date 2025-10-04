@@ -123,6 +123,7 @@ def _fetch_fund_metadata(isin: str) -> dict | None:
         metadata['ter'] = getattr(fund, 'totalExpenseRatio', None)
         metadata['fecha_creacion'] = getattr(fund, 'inceptionDate', None)
         metadata['domicilio'] = getattr(fund, 'domicile', None)
+        metadata['currency'] = getattr(fund, 'currencyId', None) # <-- NUEVA LÍNEA
         
         # El SRRI puede estar en un atributo anidado
         try:
@@ -130,8 +131,8 @@ def _fetch_fund_metadata(isin: str) -> dict | None:
         except (AttributeError, KeyError, TypeError):
             metadata['srri'] = None
 
-        # Si faltan datos clave (como el TER o la gestora), hacemos la llamada a snapshot() como fallback
-        if not metadata['ter'] or not metadata['gestora']:
+        # Si faltan datos clave, hacemos la llamada a snapshot() como fallback
+        if not metadata['ter'] or not metadata['gestora'] or not metadata['currency']:
             snapshot_data = fund.snapshot()
             if snapshot_data:
                 metadata['nombre_legal'] = snapshot_data.get("LegalName", metadata['nombre_legal'])
@@ -139,6 +140,7 @@ def _fetch_fund_metadata(isin: str) -> dict | None:
                 metadata['ter'] = snapshot_data.get("TotalExpenseRatio", metadata['ter'])
                 metadata['fecha_creacion'] = snapshot_data.get("InceptionDate", metadata['fecha_creacion'])
                 metadata['domicilio'] = snapshot_data.get("Domicile", metadata['domicilio'])
+                metadata['currency'] = snapshot_data.get("currencyId", metadata['currency']) # <-- NUEVA LÍNEA
                 if snapshot_data.get("CollectedSRRI"):
                     metadata['srri'] = snapshot_data["CollectedSRRI"].get("Rank", metadata['srri'])
         
